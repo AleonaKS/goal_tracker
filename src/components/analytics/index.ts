@@ -1,0 +1,17 @@
+export { CircularProgressChart } from './CircularProgressChart'
+export { LinearProgressBar } from './LinearProgressBar'
+export { BarChart } from './BarChart'
+export { HeatmapCalendar } from './HeatmapCalendar'
+export { ActivityHeatmap } from './ActivityHeatmap'
+export { StatsCard } from './StatsCard'
+export { RadarChart } from './RadarChart'
+export { GanttChart } from './GanttChart'
+export { CategoryAnalytics } from './CategoryAnalytics'
+export { CategoryAnalyticsTable } from './CategoryAnalyticsTable'
+
+// New chart types from images
+export { StackedBarChart } from './StackedBarChart'
+export { MultiLineChart } from './MultiLineChart'
+export { AreaChart } from './AreaChart'
+export { ScatterChart } from './ScatterChart'
+export { ChartsShowcase } from './ChartsShowcase'
