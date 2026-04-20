@@ -1,7 +1,8 @@
 import { useEffect, useCallback } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
-import { calculateGoalProgressByMetric, shouldResetMetric } from '@/lib/calculations'
+import { calculateGoalProgressByMetric, shouldResetMetric, calculateExpectedCompletionDate, calculateCurrentStreak } from '@/lib/calculations'
 import { calculateGoalStatus, getDeadlineDate } from '@/lib/utils'
+import { checkAchievements } from '@/lib/gamification'
 import type { Goal, Metric, MetricEntry } from '@/types'
 
 /**
@@ -13,8 +14,10 @@ export function useAutoProgress() {
     metrics, 
     metricEntries, 
     tasks,
+    user,
     updateGoal, 
     updateMetric,
+    createAchievement,
     fetchGoals,
     fetchMetrics,
     fetchMetricEntries
@@ -55,6 +58,18 @@ export function useAutoProgress() {
     
     const calculatedProgress = calculateGoalProgress(goal)
     
+    // Calculate expected completion date
+    let expectedCompletionDate: Date | null = null
+    if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
+      const metric = metrics.find(m => m.id === goal.progressMetricId)
+      if (metric) {
+        const entries = metricEntries.filter(e => e.metricId === metric.id)
+        expectedCompletionDate = calculateExpectedCompletionDate(goal, entries, metric)
+      }
+    } else {
+      expectedCompletionDate = calculateExpectedCompletionDate(goal, metricEntries)
+    }
+    
     // Calculate status based on progress and deadline
     let newStatus = goal.status
     if (goal.dueDate) {
@@ -63,13 +78,20 @@ export function useAutoProgress() {
     }
     
     // Only update if changed
-    if (calculatedProgress !== goal.progress || newStatus !== goal.status) {
+    const hasChanges = (
+      calculatedProgress !== goal.progress || 
+      newStatus !== goal.status ||
+      (expectedCompletionDate?.getTime() !== goal.expectedCompletionDate?.getTime())
+    )
+    
+    if (hasChanges) {
       await updateGoal(goal.id, {
         progress: calculatedProgress,
-        status: newStatus
+        status: newStatus,
+        expectedCompletionDate
       })
     }
-  }, [calculateGoalProgress, updateGoal])
+  }, [calculateGoalProgress, updateGoal, metrics, metricEntries])
 
   /**
    * Check and reset metrics if needed
@@ -80,7 +102,7 @@ export function useAutoProgress() {
     for (const metric of metrics) {
       if (!metric.autoResetEnabled || !metric.resetPeriodicity) continue
       
-      const shouldReset = shouldResetMetric(metric, now)
+      const shouldReset = shouldResetMetric(metric)
       
       if (shouldReset) {
         // Reset metric progress to start value
@@ -209,13 +231,73 @@ export function useAutoProgress() {
   }, [goals, updateGoalProgress])
 
   /**
+   * Check and award achievements based on current stats
+   */
+  const checkAndAwardAchievements = useCallback(async () => {
+    if (!user) return
+    
+    // Calculate current stats for achievement checking
+    const goalsCompleted = goals.filter(g => g.status === 'completed').length
+    const tasksCompleted = tasks.filter(t => t.completed).length
+    const metricsTargetsReached = metrics.filter(m => {
+      const entries = metricEntries.filter(e => e.metricId === m.id)
+      const totalValue = entries.reduce((sum, e) => sum + e.value, m.startValue)
+      return totalValue >= m.targetValue
+    }).length
+    
+    // Calculate max habit streak across all metrics
+    let maxHabitStreak = 0
+    for (const metric of metrics) {
+      if (metric.type === 'habit') {
+        const entries = metricEntries.filter(e => e.metricId === metric.id)
+        if (entries.length > 0) {
+          const streak = calculateCurrentStreak(entries, metric.periodicity)
+          maxHabitStreak = Math.max(maxHabitStreak, streak)
+        }
+      }
+    }
+    
+    const stats = {
+      goalsCreated: goals.length,
+      goalsCompleted,
+      tasksCompleted,
+      metricsCount: metrics.length,
+      metricsTargetsReached,
+      habitsStreak: maxHabitStreak,
+      categoriesCount: 0, // TODO: Get from categories
+      activeDays: 0 // TODO: Calculate from activity
+    }
+    
+    try {
+      const newAchievements = await checkAchievements(user.id, stats)
+      
+      // Create new achievements in the store
+      for (const achievement of newAchievements) {
+        await createAchievement({
+          userId: user.id,
+          type: achievement.id.includes('goal') ? 'goal_completed' : 
+                achievement.id.includes('habit') ? 'habit_streak' : 
+                achievement.id.includes('task') ? 'completed_task' : 'milestone',
+          title: achievement.title,
+          description: achievement.description,
+          value: achievement.points,
+          referenceId: user.id
+        })
+      }
+    } catch (error) {
+      console.error('Error checking achievements:', error)
+    }
+  }, [user, goals, tasks, metrics, metricEntries, createAchievement])
+
+  /**
    * Run all automatic calculations
    */
   const runAutoCalculations = useCallback(async () => {
     await checkAndResetMetrics()
     await updateAllMetricsStats()
     await updateAllGoalsProgress()
-  }, [checkAndResetMetrics, updateAllMetricsStats, updateAllGoalsProgress])
+    await checkAndAwardAchievements()
+  }, [checkAndResetMetrics, updateAllMetricsStats, updateAllGoalsProgress, checkAndAwardAchievements])
 
   // Run calculations on mount and periodically
   useEffect(() => {

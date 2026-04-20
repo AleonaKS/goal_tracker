@@ -165,7 +165,14 @@ export function GoalDetailPage() {
       return total + (latestEntry.finalValue || metric.startValue || 0)
     }, 0)
   }, [goalMetrics, metricEntries])
-  const targetMetricValue = 0 // TODO: Implement target metric calculation
+  // Calculate target metric value if goal uses metric for progress
+  const targetMetricValue = useMemo(() => {
+    if (goalData?.progressCalculation === 'by_metric' && goalData?.progressMetricId) {
+      const targetMetric = goalMetrics.find(m => m.id === goalData.progressMetricId)
+      return targetMetric ? targetMetric.targetValue : 0
+    }
+    return 0
+  }, [goalData, goalMetrics])
 
   // Prepare Gantt chart data - safe version that works even without goalData
   const ganttData = useMemo(() => {

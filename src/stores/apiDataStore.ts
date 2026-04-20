@@ -79,6 +79,7 @@ interface ApiDataState {
   updateMetricEntry: (id: string, updates: Partial<MetricEntry>) => Promise<void>
   deleteMetricEntry: (id: string) => Promise<void>
   
+  createAchievement: (achievement: Omit<Achievement, 'id' | 'createdAt'>) => Promise<void>
   createUnit: (unit: Omit<Unit, 'id' | 'createdAt'>) => Promise<void>
   updateUnit: (id: string, updates: Partial<Unit>) => Promise<void>
   deleteUnit: (id: string) => Promise<void>
@@ -743,6 +744,20 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
       }))
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete metric entry' })
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  createAchievement: async (achievement: Omit<Achievement, 'id' | 'createdAt'>) => {
+    try {
+      set({ isLoading: true, error: null })
+      const newAchievement = await api.createAchievement(achievement)
+      set(state => ({
+        achievements: [...state.achievements, newAchievement]
+      }))
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Failed to create achievement' })
     } finally {
       set({ isLoading: false })
     }

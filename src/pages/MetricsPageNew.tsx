@@ -5,6 +5,7 @@ import { useApiDataStore } from '@/stores/apiDataStore'
 import { Modal } from '@/components/Modal'
 import { MetricForm } from '@/components/forms/MetricForm'
 import { cn, formatDate } from '@/lib/utils'
+import { calculateCurrentStreak, calculateMaxStreak } from '@/lib/calculations'
 import type { Metric, Category } from '@/types'
 
 export function MetricsPage() {
@@ -48,13 +49,9 @@ export function MetricsPage() {
     const sortedEntries = entries.sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime())
     const latestEntry = sortedEntries[0]
     
-    // Calculate streak (simplified)
-    let currentStreak = 0
-    let maxStreak = 0
-    if (metric.type === 'habit' && entries.length > 0) {
-      currentStreak = 1 // Simplified - should calculate actual streak
-      maxStreak = Math.max(...entries.map(() => 1)) // Simplified
-    }
+    // Calculate streak using proper functions
+    const currentStreak = metric.type === 'habit' ? calculateCurrentStreak(entries, metric.periodicity) : 0
+    const maxStreak = metric.type === 'habit' ? calculateMaxStreak(entries) : 0
     
     return {
       ...metric,

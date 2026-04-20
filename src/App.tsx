@@ -11,6 +11,7 @@ import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { useAuthStore } from '@/stores/authStore'
 import { useApiDataStore } from '@/stores/apiDataStore'
+import { useAutoProgress } from '@/hooks/useAutoProgress'
 import { useEffect, useState, useRef } from 'react'
 
 // Layout wrapper for authenticated routes
@@ -54,6 +55,7 @@ function ErrorScreen({ error }: { error: string }) {
 function App() {
   const { user, isLoading: authLoading, isInitialized, initialize } = useAuthStore()
   const { isLoading: loading, error, fetchAll, setUser } = useApiDataStore()
+  const { runAutoCalculations } = useAutoProgress()
   const hasLoadedData = useRef(false)
 
   // Initialize auth on mount
@@ -70,9 +72,12 @@ function App() {
   useEffect(() => {
     if (user && !hasLoadedData.current) {
       hasLoadedData.current = true
-      fetchAll()
+      fetchAll().then(() => {
+        // Run auto calculations after data is loaded
+        runAutoCalculations()
+      })
     }
-  }, [user])
+  }, [user, fetchAll, runAutoCalculations])
 
   // Show loading while initializing
   if (!isInitialized) {

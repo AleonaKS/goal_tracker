@@ -276,7 +276,7 @@ export function shouldResetMetric(metric: Metric): boolean {
 }
 
 /**
- * Calculate expected completion date based on progress rate
+ * Calculate expected completion date based on progress rate or metric pace
  */
 export function calculateExpectedCompletionDate(
   goal: Goal,
@@ -287,6 +287,13 @@ export function calculateExpectedCompletionDate(
   
   const now = new Date()
   const startDate = new Date(goal.startDate)
+  
+  // If goal uses metric for progress calculation
+  if (goal.progressCalculation === 'by_metric' && metric && entries.length > 0) {
+    return calculateExpectedCompletionDateByMetric(goal, metric, entries)
+  }
+  
+  // Default calculation by progress rate
   const daysElapsed = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
   
   if (daysElapsed === 0) return null
@@ -294,11 +301,76 @@ export function calculateExpectedCompletionDate(
   // Calculate progress rate (progress per day)
   const progressRate = goal.progress / daysElapsed
   
+  if (progressRate === 0) return null
+  
   // Calculate remaining progress
   const remainingProgress = 100 - goal.progress
   
   // Calculate estimated days to completion
   const estimatedDaysToCompletion = Math.ceil(remainingProgress / progressRate)
+  
+  // Calculate expected completion date
+  const expectedDate = new Date(now.getTime() + (estimatedDaysToCompletion * 24 * 60 * 60 * 1000))
+  
+  return expectedDate
+}
+
+/**
+ * Calculate expected completion date based on metric pace (weighted average)
+ */
+function calculateExpectedCompletionDateByMetric(
+  goal: Goal,
+  metric: Metric,
+  entries: MetricEntry[]
+): Date | null {
+  if (entries.length < 2) return null
+  
+  const now = new Date()
+  const sortedEntries = [...entries].sort((a, b) => 
+    new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
+  )
+  
+  // Calculate current value
+  const currentValue = sortedEntries.reduce(
+    (sum, e) => sum + (e.isAddition ? e.value : -e.value),
+    metric.startValue
+  )
+  
+  // Calculate remaining value needed
+  const remainingValue = metric.targetValue - currentValue
+  if (remainingValue <= 0) return null // Already achieved
+  
+  // Calculate weighted average pace (more recent entries have more weight)
+  let weightedSum = 0
+  let totalWeight = 0
+  
+  for (let i = 1; i < sortedEntries.length; i++) {
+    const prevEntry = sortedEntries[i - 1]
+    const currEntry = sortedEntries[i]
+    
+    const daysDiff = Math.ceil(
+      (new Date(currEntry.entryDate).getTime() - new Date(prevEntry.entryDate).getTime()) / 
+      (1000 * 60 * 60 * 24)
+    )
+    
+    if (daysDiff > 0) {
+      const valueDiff = Math.abs(currEntry.value - prevEntry.value)
+      const pace = valueDiff / daysDiff
+      
+      // Weight: more recent entries have higher weight
+      const weight = i / sortedEntries.length
+      weightedSum += pace * weight
+      totalWeight += weight
+    }
+  }
+  
+  if (totalWeight === 0) return null
+  
+  const averagePace = weightedSum / totalWeight
+  if (averagePace === 0) return null
+  
+  // Calculate estimated days to completion
+  const estimatedDaysToCompletion = Math.ceil(remainingValue / averagePace)
   
   // Calculate expected completion date
   const expectedDate = new Date(now.getTime() + (estimatedDaysToCompletion * 24 * 60 * 60 * 1000))

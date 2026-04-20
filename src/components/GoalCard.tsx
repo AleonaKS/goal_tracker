@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreVertical, Edit, Trash2 } from 'lucide-react'
+import { MoreVertical, Edit, Trash2, TrendingUp } from 'lucide-react'
 import { ProgressBar } from './ProgressBar'
 import { StatusBadge, PriorityBadge } from './StatusBadge'
 import { Modal, ConfirmModal } from './Modal'
@@ -41,7 +41,7 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
     return { progress, completedTasks: completed, totalTasks: total, calculatedStatus: status }
   }, [tasks, goal])
 
-  const progressText = goal.progressCalculation === 'tasks'
+  const progressText = goal.progressCalculation === 'by_tasks'
     ? `${completedTasks} из ${totalTasks} задач`
     : `${progress}%`
   
@@ -114,21 +114,31 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
           )}
 
           {/* Deadline and progress */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-gray-500">
-              {deadlineDate ? (
-                <span className={cn(
-                  calculatedStatus === 'overdue' && 'text-red-600 font-medium'
-                )}>
-                  До: {formatDate(deadlineDate)}
-                </span>
-              ) : (
-                <span>Без срока</span>
-              )}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                {deadlineDate ? (
+                  <span className={cn(
+                    calculatedStatus === 'overdue' && 'text-red-600 font-medium'
+                  )}>
+                    До: {formatDate(deadlineDate)}
+                  </span>
+                ) : (
+                  <span>Без срока</span>
+                )}
+              </div>
+              <div className="text-sm font-medium text-gray-700">
+                {progressText}
+              </div>
             </div>
-            <div className="text-sm font-medium text-gray-700">
-              {progressText}
-            </div>
+            
+            {/* Expected completion date */}
+            {goal.expectedCompletionDate && goal.status !== 'completed' && (
+              <div className="flex items-center gap-1 text-xs text-blue-600">
+                <TrendingUp className="w-3 h-3" />
+                <span>Прогноз: {formatDate(goal.expectedCompletionDate)}</span>
+              </div>
+            )}
           </div>
 
           {/* Progress bar */}

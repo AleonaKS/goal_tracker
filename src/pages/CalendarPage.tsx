@@ -23,6 +23,7 @@ import { Modal } from '@/components/Modal'
 import { TaskForm } from '@/components/forms/TaskForm'
 import { MetricAnalyticsModal } from '@/components/MetricAnalyticsModal'
 import { WeeklyTimelineView } from '@/components/WeeklyTimelineView'
+import { GanttChart } from '@/components/analytics/GanttChart'
 import { cn, formatDate } from '@/lib/utils'
 import type { Goal, Task, Metric } from '@/types'
 
@@ -451,79 +452,62 @@ export function CalendarPage() {
 
       {/* Gantt Chart View */}
       {viewMode === 'gantt' && (
-        <div className="card overflow-x-auto">
-          <div className="min-w-[800px] p-4">
+        <div className="card">
+          <div className="p-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Диаграмма Ганта</h3>
             
-            {/* Gantt Header */}
-            <div className="flex border-b pb-2 mb-2">
-              <div className="w-48 font-medium text-gray-700">Название</div>
-              <div className="flex-1 flex">
-                {Array.from({ length: 30 }, (_, i) => (
-                  <div key={i} className="w-8 text-center text-xs text-gray-500">
-                    {i + 1}
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* Gantt Items */}
-            <div className="space-y-2">
-              {/* Goals */}
-              {(showType === 'all' || showType === 'goals') && goals.map((goal) => {
-                const startDate = new Date(goal.startDate)
-                const endDate = goal.deadlineValue ? new Date(goal.deadlineValue) : addDays(startDate, 30)
-                const startDay = Math.max(0, Math.min(29, startDate.getDate() - 1))
-                const duration = Math.max(1, Math.min(30 - startDay, endDate.getDate() - startDate.getDate() + 1))
-                
-                return (
-                  <div key={goal.id} className="flex items-center">
-                    <div className="w-48 pr-4">
-                      <span className="text-sm font-medium text-gray-900 truncate block">🎯 {goal.name}</span>
-                    </div>
-                    <div className="flex-1 relative h-8 bg-gray-100 rounded">
-                      <div
-                        className="absolute h-6 top-1 rounded bg-blue-500 text-white text-xs flex items-center px-2"
-                        style={{
-                          left: `${(startDay / 30) * 100}%`,
-                          width: `${(duration / 30) * 100}%`,
-                        }}
-                      >
-                        {goal.progress || 0}%
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            {/* Prepare data for Gantt chart */}
+            {(() => {
+              const ganttData = []
               
-              {/* Tasks */}
-              {(showType === 'all' || showType === 'tasks') && allTasks.filter(t => t.dueDate).map((task) => {
-                const dueDate = new Date(task.dueDate!)
-                const startDay = Math.max(0, Math.min(29, dueDate.getDate() - 1))
-                
-                return (
-                  <div key={task.id} className="flex items-center">
-                    <div className="w-48 pr-4">
-                      <span className="text-sm font-medium text-gray-900 truncate block">📋 {task.name}</span>
-                    </div>
-                    <div className="flex-1 relative h-8 bg-gray-100 rounded">
-                      <button
-                        onClick={() => updateTask(task.id, { completed: !task.completed })}
-                        className={`absolute h-6 top-1 rounded text-white text-xs flex items-center px-2 cursor-pointer ${
-                          task.completed ? 'bg-green-500 hover:bg-green-600' : 'bg-orange-500 hover:bg-orange-600'
-                        }`}
-                        style={{
-                          left: `${(startDay / 30) * 100}%`,
-                          width: '8%',
-                        }}
-                      >
-                        {task.completed ? '✓' : '!'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+              // Add goals
+              if (showType === 'all' || showType === 'goals') {
+                goals.forEach(goal => {
+                  if (goal.startDate) {
+                    ganttData.push({
+                      id: goal.id,
+                      name: `🎯 ${goal.name}`,
+                      start: new Date(goal.startDate),
+                      end: goal.dueDate ? new Date(goal.dueDate) : addDays(new Date(goal.startDate), 30),
+                      progress: goal.progress || 0,
+                      status: goal.status
+                    })
+                  }
+                })
+              }
+              
+              // Add tasks
+              if (showType === 'all' || showType === 'tasks') {
+                allTasks.filter(task => task.dueDate).forEach(task => {
+                  ganttData.push({
+                    id: task.id,
+                    name: `📋 ${task.name}`,
+                    start: new Date(task.startDate || task.dueDate!),
+                    end: new Date(task.dueDate!),
+                    progress: task.completed ? 100 : task.progress || 0,
+                    status: task.completed ? 'completed' : 'in_progress'
+                  })
+                })
+              }
+              
+              return ganttData.length > 0 ? (
+                <GanttChart 
+                  data={ganttData} 
+                  height={Math.max(400, ganttData.length * 60)}
+                  width={1200}
+                />
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <Target className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Нет данных для диаграммы Ганта</h3>
+                  <p className="text-sm">
+                    {showType === 'goals' && 'Нет целей с датами начала'}
+                    {showType === 'tasks' && 'Нет задач с датами выполнения'}
+                    {showType === 'all' && 'Нет целей или задач с датами'}
+                  </p>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
