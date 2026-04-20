@@ -659,6 +659,8 @@ export async function updateMetric(id: string, updates: Partial<Metric>): Promis
   if (updates.targetIncreaseValue !== undefined) dbUpdates.target_increase_value = updates.targetIncreaseValue
   if (updates.targetIncreaseType !== undefined) dbUpdates.target_increase_type = updates.targetIncreaseType
   if (updates.targetIncreasePeriodicity !== undefined) dbUpdates.target_increase_periodicity = updates.targetIncreasePeriodicity
+  // progress field only - other stats go to metric_analytics_cache
+  if (updates.progress !== undefined) dbUpdates.progress = updates.progress
 
   console.log('updateMetric - id:', id, 'dbUpdates:', dbUpdates)
 
@@ -884,9 +886,42 @@ export async function getMetricAnalytics(userId: string) {
     .select('*')
     .eq('user_id', userId)
     .order('calculated_at', { ascending: false })
-  
+
   if (error) throw error
   return data || []
+}
+
+export async function upsertMetricAnalytics(analytics: {
+  metricId: string
+  userId: string
+  currentStreak?: number
+  maxStreak?: number
+  recordValue?: number
+  totalEntries?: number
+  totalValue?: number
+}): Promise<MetricAnalyticsCache> {
+  const dbData = {
+    metric_id: analytics.metricId,
+    user_id: analytics.userId,
+    current_streak: analytics.currentStreak ?? 0,
+    max_streak: analytics.maxStreak ?? 0,
+    record_value: analytics.recordValue ?? 0,
+    total_entries: analytics.totalEntries ?? 0,
+    total_value: analytics.totalValue ?? 0,
+    calculated_at: new Date().toISOString()
+  }
+
+  const { data, error } = await getClient()
+    .from('metric_analytics_cache')
+    .upsert([dbData], { onConflict: 'metric_id' })
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('upsertMetricAnalytics error:', error)
+    throw error
+  }
+  return data
 }
 
 // Units

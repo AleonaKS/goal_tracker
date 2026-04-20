@@ -9,6 +9,7 @@ import {
   MetricEntry, 
   DashboardStats,
   MetricAnalytics,
+  MetricAnalyticsCache,
   Unit,
   FavoriteFilter
 } from '@/types'
@@ -210,6 +211,18 @@ export async function getMetricAnalytics(userId: string): Promise<MetricAnalytic
   }
   
   return analytics
+}
+
+export async function upsertMetricAnalytics(analytics: {
+  metricId: string
+  userId: string
+  currentStreak?: number
+  maxStreak?: number
+  recordValue?: number
+  totalEntries?: number
+  totalValue?: number
+}): Promise<MetricAnalyticsCache> {
+  return api.upsertMetricAnalytics(analytics)
 }
 
 // Favorite Filters

@@ -1,14 +1,17 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { calculateGoalProgressByMetric, shouldResetMetric, calculateExpectedCompletionDate, calculateCurrentStreak } from '@/lib/calculations'
 import { calculateGoalStatus, getDeadlineDate } from '@/lib/utils'
 import { checkAchievements } from '@/lib/gamification'
+import { upsertMetricAnalytics } from '@/lib/api'
 import type { Goal, Metric, MetricEntry } from '@/types'
 
 /**
  * Hook for automatic progress calculation and metric resets
  */
 export function useAutoProgress() {
+  const isRunningRef = useRef(false)
+  
   const { 
     goals, 
     metrics, 
@@ -108,7 +111,6 @@ export function useAutoProgress() {
         // Reset metric progress to start value
         await updateMetric(metric.id, {
           progress: 0,
-          totalValue: 0,
           lastResetAt: now
         })
         
@@ -200,26 +202,35 @@ export function useAutoProgress() {
    * Update all metrics statistics
    */
   const updateAllMetricsStats = useCallback(async () => {
+    if (!user) return
     for (const metric of metrics) {
       const entries = metricEntries.filter(e => e.metricId === metric.id)
       const stats = calculateMetricStats(metric, entries)
       
-      if (stats && (
-        stats.progress !== metric.progress ||
-        stats.currentStreak !== metric.currentStreak ||
-        stats.maxStreak !== metric.maxStreak
-      )) {
-        await updateMetric(metric.id, {
-          progress: stats.progress,
-          currentStreak: stats.currentStreak,
-          maxStreak: stats.maxStreak,
-          recordValue: stats.recordValue,
-          totalEntries: stats.totalEntries,
-          totalValue: stats.totalValue
-        })
+      if (stats) {
+        // Update progress in metrics table (only progress field)
+        if (stats.progress !== metric.progress) {
+          await updateMetric(metric.id, { progress: stats.progress })
+        }
+        
+        // Update analytics in metric_analytics_cache table
+        if (
+          stats.currentStreak !== metric.currentStreak ||
+          stats.maxStreak !== metric.maxStreak
+        ) {
+          await upsertMetricAnalytics({
+            metricId: metric.id,
+            userId: user.id,
+            currentStreak: stats.currentStreak,
+            maxStreak: stats.maxStreak,
+            recordValue: stats.recordValue,
+            totalEntries: stats.totalEntries,
+            totalValue: stats.totalValue
+          })
+        }
       }
     }
-  }, [metrics, metricEntries, calculateMetricStats, updateMetric])
+  }, [metrics, metricEntries, calculateMetricStats, updateMetric, user])
 
   /**
    * Update all goals progress
@@ -301,14 +312,30 @@ export function useAutoProgress() {
 
   // Run calculations on mount and periodically
   useEffect(() => {
+    // Prevent concurrent execution
+    if (isRunningRef.current) return
+    
+    const executeCalculations = async () => {
+      isRunningRef.current = true
+      try {
+        await runAutoCalculations()
+      } finally {
+        isRunningRef.current = false
+      }
+    }
+    
     // Initial calculation
-    runAutoCalculations()
+    executeCalculations()
     
     // Set up interval for periodic checks (every 5 minutes)
-    const interval = setInterval(runAutoCalculations, 5 * 60 * 1000)
+    const interval = setInterval(() => {
+      if (!isRunningRef.current) {
+        executeCalculations()
+      }
+    }, 5 * 60 * 1000)
     
     return () => clearInterval(interval)
-  }, [runAutoCalculations])
+  }, [])
 
   return {
     calculateGoalProgress,
