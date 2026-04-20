@@ -1,6 +1,7 @@
 export { CircularProgressChart } from './CircularProgressChart'
 export { LinearProgressBar } from './LinearProgressBar'
 export { BarChart } from './BarChart'
+export { LineChart } from './LineChart'
 export { HeatmapCalendar } from './HeatmapCalendar'
 export { ActivityHeatmap } from './ActivityHeatmap'
 export { StatsCard } from './StatsCard'
