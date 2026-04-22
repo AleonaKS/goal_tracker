@@ -5,32 +5,66 @@ import type { User } from '@/types'
 
 // Helper function to ensure user exists in users table
 async function ensureUserExists(authUser: any) {
-  const { data: existingUser, error: selectError } = await getClient()
+  // Check if user exists by id
+  const { data: existingUserById, error: selectError } = await getClient()
     .from('users')
-    .select('id')
+    .select('id, email')
     .eq('id', authUser.id)
     .maybeSingle()
   
   if (selectError && selectError.code !== 'PGRST116') {
-    console.error('Error checking user existence:', selectError)
+    console.error('Error checking user existence by id:', selectError)
   }
   
-  if (!existingUser) {
-    // Create user record - RLS policy allows users to insert their own profile
-    const { error: insertError } = await getClient()
+  // User already exists with this id
+  if (existingUserById) {
+    return
+  }
+  
+  // Check if user exists by email (different auth id but same email)
+  const { data: existingUserByEmail, error: emailSelectError } = await getClient()
+    .from('users')
+    .select('id, email')
+    .eq('email', authUser.email)
+    .maybeSingle()
+  
+  if (emailSelectError && emailSelectError.code !== 'PGRST116') {
+    console.error('Error checking user existence by email:', emailSelectError)
+  }
+  
+  // If user exists with same email but different id, update the id to match current auth user
+  if (existingUserByEmail) {
+    const { error: updateError } = await getClient()
       .from('users')
-      .insert({
-        id: authUser.id,
-        email: authUser.email,
-        login: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'user',
-        registration_date: new Date().toISOString(),
-        settings: { theme: 'light', language: 'ru' }
-      })
+      .update({ id: authUser.id })
+      .eq('email', authUser.email)
     
-    if (insertError) {
-      console.error('Error creating user record:', insertError)
-      throw insertError
+    if (updateError) {
+      console.error('Error updating user id:', updateError)
+      throw updateError
     }
+    return
+  }
+  
+  // Create new user record
+  const { error: insertError } = await getClient()
+    .from('users')
+    .insert({
+      id: authUser.id,
+      email: authUser.email,
+      login: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'user',
+      registration_date: new Date().toISOString(),
+      settings: { theme: 'light', language: 'ru' }
+    })
+  
+  if (insertError) {
+    // Handle duplicate key violation gracefully
+    if (insertError.code === '23505') {
+      console.warn('User record already exists (duplicate key), skipping creation')
+      return
+    }
+    console.error('Error creating user record:', insertError)
+    throw insertError
   }
 }
 
