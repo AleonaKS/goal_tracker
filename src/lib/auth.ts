@@ -33,16 +33,44 @@ async function ensureUserExists(authUser: any) {
   }
   
   // If user exists with same email but different id, update the id to match current auth user
+  // and migrate all related data to the new user_id
   if (existingUserByEmail) {
+    const oldUserId = existingUserByEmail.id
+    const newUserId = authUser.id
+    
+    console.log(`Migrating user data from ${oldUserId} to ${newUserId}`)
+    
+    // Update user id in users table
     const { error: updateError } = await getClient()
       .from('users')
-      .update({ id: authUser.id })
+      .update({ id: newUserId })
       .eq('email', authUser.email)
     
     if (updateError) {
       console.error('Error updating user id:', updateError)
       throw updateError
     }
+    
+    // Migrate all related data to new user_id
+    const tablesToUpdate = [
+      'goals', 'tasks', 'metrics', 'categories', 'stages', 
+      'metric_entries', 'user_achievements', 'favorite_filters'
+    ]
+    
+    for (const table of tablesToUpdate) {
+      const { error: migrateError } = await getClient()
+        .from(table)
+        .update({ user_id: newUserId })
+        .eq('user_id', oldUserId)
+      
+      if (migrateError) {
+        console.warn(`Warning: could not migrate ${table}:`, migrateError)
+        // Don't throw - continue with other tables
+      } else {
+        console.log(`Migrated ${table} to new user_id`)
+      }
+    }
+    
     return
   }
   
