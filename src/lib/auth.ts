@@ -173,6 +173,12 @@ export async function signUp(email: string, password: string, username: string) 
   })
   
   if (error) throw error
+  
+  // Create user record in users table after successful registration
+  if (data.user) {
+    await ensureUserExists(data.user)
+  }
+  
   return data
 }
 
