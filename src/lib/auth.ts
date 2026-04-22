@@ -12,8 +12,20 @@ async function ensureUserExists(authUser: any) {
     .single()
   
   if (!existingUser) {
-    // Create user record if it doesn't exist
-    await getClient()
+    // Create user record using service role client to bypass RLS
+    const { createClient } = await import('@supabase/supabase-js')
+    const serviceRoleClient = createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+    
+    await serviceRoleClient
       .from('users')
       .insert({
         id: authUser.id,
