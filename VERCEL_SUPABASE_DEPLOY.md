@@ -28,9 +28,9 @@
 ### 2. Настройте Environment Variables в Vercel
 После импорта репозитория в Vercel добавьте:
 ```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_GOAL_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY=your-anon-key
+GOAL_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 ### 3. Деплой

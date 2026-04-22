@@ -69,8 +69,8 @@ INSERT INTO goals (id, user_id, category_id, name, description, status, priority
 
 Make sure these are set in Vercel Dashboard:
 ```
-VITE_SUPABASE_URL=https://hshufmajurttvuewqiwa.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+NEXT_PUBLIC_GOAL_SUPABASE_URL=https://hshufmajurttvuewqiwa.supabase.co
+NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 **Note:** Service role key should NOT be exposed to frontend - it's a security risk.
