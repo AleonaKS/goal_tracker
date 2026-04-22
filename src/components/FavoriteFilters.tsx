@@ -24,16 +24,19 @@ export function FavoriteFilters({ entityType, items, onFilterChange }: FavoriteF
   
   const handleCreateFilter = async (filterData: Partial<FavoriteFilter>) => {
     try {
-      const newFilter = await createFavoriteFilter({
-        name: filterData.name || 'Новый фильтр',
-        filterType: 'custom',
-        filterValue: filterData.status || filterData.priority || filterData.dateRange || {}
-        isDefault: false
-      })
+      const newFilter: FavoriteFilter = {
+        name: filterData.name || 'New Filter',
+        filterType: 'status',
+        filterValue: filterData.filterValue || {},
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      }
+      const createdFilter = await createFavoriteFilter(newFilter)
       setShowModal(false)
       setEditingFilter(null)
       
       // Apply the new filter
+      onFilterChange(createdFilter)
       onFilterChange(newFilter)
     } catch (error) {
       console.error('Failed to create filter:', error)
