@@ -3,6 +3,28 @@ import { isDemoMode, demoUser } from './demo'
 import * as api from './supabase-api'
 import type { User } from '@/types'
 
+// Helper function to ensure user exists in users table
+async function ensureUserExists(authUser: any) {
+  const { data: existingUser } = await getClient()
+    .from('users')
+    .select('id')
+    .eq('id', authUser.id)
+    .single()
+  
+  if (!existingUser) {
+    // Create user record if it doesn't exist
+    await getClient()
+      .from('users')
+      .insert({
+        id: authUser.id,
+        email: authUser.email,
+        login: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'user',
+        registration_date: new Date().toISOString(),
+        settings: { theme: 'light', language: 'ru' }
+      })
+  }
+}
+
 export async function signIn(email: string, password: string) {
   if (isDemoMode()) {
     // Demo mode - accept any email/password
@@ -18,6 +40,12 @@ export async function signIn(email: string, password: string) {
   })
   
   if (error) throw error
+  
+  // Ensure user exists in users table
+  if (data.user) {
+    await ensureUserExists(data.user)
+  }
+  
   return data
 }
 
