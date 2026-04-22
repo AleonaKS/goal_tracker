@@ -32,26 +32,15 @@ async function ensureUserExists(authUser: any) {
     console.error('Error checking user existence by email:', emailSelectError)
   }
   
-  // If user exists with same email but different id, update the id to match current auth user
-  // and migrate all related data to the new user_id
+  // If user exists with same email but different id, delete old record and create new one
+  // with correct id, then migrate all related data
   if (existingUserByEmail) {
     const oldUserId = existingUserByEmail.id
     const newUserId = authUser.id
     
     console.log(`Migrating user data from ${oldUserId} to ${newUserId}`)
     
-    // Update user id in users table
-    const { error: updateError } = await getClient()
-      .from('users')
-      .update({ id: newUserId })
-      .eq('email', authUser.email)
-    
-    if (updateError) {
-      console.error('Error updating user id:', updateError)
-      throw updateError
-    }
-    
-    // Migrate all related data to new user_id
+    // First, migrate all related data to new user_id (before deleting old user record)
     const tablesToUpdate = [
       'goals', 'tasks', 'metrics', 'categories', 'stages', 
       'metric_entries', 'user_achievements', 'favorite_filters'
@@ -68,6 +57,53 @@ async function ensureUserExists(authUser: any) {
         // Don't throw - continue with other tables
       } else {
         console.log(`Migrated ${table} to new user_id`)
+      }
+    }
+    
+    // Delete old user record and insert new one with correct id
+    // We need to do this because updating PK can fail due to FK constraints
+    const { data: oldUserData } = await getClient()
+      .from('users')
+      .select('*')
+      .eq('id', oldUserId)
+      .single()
+    
+    if (oldUserData) {
+      // Delete old record
+      const { error: deleteError } = await getClient()
+        .from('users')
+        .delete()
+        .eq('id', oldUserId)
+      
+      if (deleteError) {
+        console.error('Error deleting old user record:', deleteError)
+        // Continue anyway - try to insert new record
+      }
+      
+      // Insert new record with correct id
+      const { error: insertError } = await getClient()
+        .from('users')
+        .insert({
+          id: newUserId,
+          email: authUser.email,
+          login: oldUserData.login || authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'user',
+          registration_date: oldUserData.registration_date || new Date().toISOString(),
+          settings: oldUserData.settings || { theme: 'light', language: 'ru' },
+          points: oldUserData.points || 0,
+          level: oldUserData.level || 1,
+          avatar_url: oldUserData.avatar_url || null
+        })
+      
+      if (insertError) {
+        // If insert failed due to duplicate, it means the record already exists
+        if (insertError.code === '23505') {
+          console.log('User record with new id already exists')
+        } else {
+          console.error('Error creating new user record:', insertError)
+          throw insertError
+        }
+      } else {
+        console.log('Created new user record with migrated id')
       }
     }
     
