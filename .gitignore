@@ -25,6 +25,7 @@ build/
 .idea/
 *.swp
 *.swo
+*.md
 *~
 
 # OS generated files

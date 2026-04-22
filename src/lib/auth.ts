@@ -5,27 +5,19 @@ import type { User } from '@/types'
 
 // Helper function to ensure user exists in users table
 async function ensureUserExists(authUser: any) {
-  const { data: existingUser } = await getClient()
+  const { data: existingUser, error: selectError } = await getClient()
     .from('users')
     .select('id')
     .eq('id', authUser.id)
-    .single()
+    .maybeSingle()
+  
+  if (selectError && selectError.code !== 'PGRST116') {
+    console.error('Error checking user existence:', selectError)
+  }
   
   if (!existingUser) {
-    // Create user record using service role client to bypass RLS
-    const { createClient } = await import('@supabase/supabase-js')
-    const serviceRoleClient = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
-      import.meta.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-    
-    await serviceRoleClient
+    // Create user record - RLS policy allows users to insert their own profile
+    const { error: insertError } = await getClient()
       .from('users')
       .insert({
         id: authUser.id,
@@ -34,6 +26,11 @@ async function ensureUserExists(authUser: any) {
         registration_date: new Date().toISOString(),
         settings: { theme: 'light', language: 'ru' }
       })
+    
+    if (insertError) {
+      console.error('Error creating user record:', insertError)
+      throw insertError
+    }
   }
 }
 
