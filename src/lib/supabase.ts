@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { isDemoMode } from './demo'
 
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_GOAL_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY
+const supabaseUrl = import.meta.env.GOAL_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_GOAL_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_GOAL_SUPABASE_PUBLISHABLE_KEY || import.meta.env.NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables. Please check your .env file.')
   console.log('Required variables:')
-  console.log('- NEXT_PUBLIC_GOAL_SUPABASE_URL')
-  console.log('- NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY')
+  console.log('- GOAL_SUPABASE_URL (or NEXT_PUBLIC_GOAL_SUPABASE_URL)')
+  console.log('- NEXT_PUBLIC_GOAL_SUPABASE_PUBLISHABLE_KEY (or NEXT_PUBLIC_GOAL_SUPABASE_ANON_KEY)')
 }
 
 // Regular client with RLS
