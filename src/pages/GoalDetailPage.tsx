@@ -731,36 +731,7 @@ export function GoalDetailPage() {
               )
             })}
           </div>
-
-          {/* Statistics Summary */}
-          <div className="mt-6 pt-4 border-t border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {validGanttData.data.filter(d => d.type === 'goal').length}
-                </div>
-                <div className="text-xs text-gray-500">Целей</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
-                  {validGanttData.data.filter(d => d.type === 'stage').length}
-                </div>
-                <div className="text-xs text-gray-500">Этапов</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {validGanttData.data.filter(d => d.progress === 100).length}
-                </div>
-                <div className="text-xs text-gray-500">Завершено</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-amber-600">
-                  {Math.round(validGanttData.data.reduce((acc, d) => acc + (d.progress || 0), 0) / validGanttData.data.length)}%
-                </div>
-                <div className="text-xs text-gray-500">Общий прогресс</div>
-              </div>
-            </div>
-          </div>
+  
         </div>
       )}
 
