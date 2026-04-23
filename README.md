@@ -1,6 +1,6 @@
 # Goal Tracker
 
-Приложение для управления целями, задачами и привычками с MongoDB бэкендом.
+Приложение для управления целями, задачами и привычками с Supabase/PostgreSQL бэкендом.
 
 ## 🚀 Запуск приложения
 
@@ -9,23 +9,15 @@
 npm install
 ```
 
-### 2. Настройка MongoDB
+### 2. Настройка Supabase
 
-#### Локальный MongoDB
-```bash
-# Установите MongoDB локально или используйте Docker
-docker run -d -p 27017:27017 --name mongodb mongo
-```
-
-#### MongoDB Atlas (облачный)
-1. Создайте аккаунт на [MongoDB Atlas](https://www.mongodb.com/atlas)
-2. Создайте новый кластер
-3. Получите строку подключения
-4. Создайте файл `.env` в корне проекта:
+1. Создайте проект на [Supabase](https://supabase.com)
+2. Получите URL и API ключи из настроек проекта
+3. Создайте файл `.env.local` в корне проекта:
 
 ```env
-VITE_MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/goaltracker?retryWrites=true&w=majority
-VITE_MONGODB_DB=goaltracker
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
 ```
 
 ### 3. Запуск приложения
@@ -47,10 +39,10 @@ npm run dev
 - **Recharts** для графиков
 
 ### Бэкенд
-- **MongoDB** как основная база данных
-- **MongoDB Driver** для работы с БД
-- **Сервисный слой** для бизнес-логики
-- **Типизированные коллекции** для безопасности данных
+- **Supabase** (PostgreSQL) как основная база данных
+- **Supabase Client** для работы с БД
+- **Row Level Security** для защиты данных
+- **Аутентификация** через Supabase Auth
 
 ### Структура проекта
 ```
@@ -99,16 +91,23 @@ src/
 
 ## 🔐 Демо доступ
 
-- **Email**: demo@example.com
-- **Пароль**: demo123
+- **Email**: hello@mail.ru
+- **Пароль**: 1234as
 
 ## 🗄️ Экспорт данных
 
 Все данные можно экспортировать в JSON формате через страницу настроек.
 
-## 🔄 Миграция данных
+## 🔄 База данных
 
-Приложение поддерживает миграцию данных из localStorage в MongoDB для плавного перехода.
+Приложение использует Supabase с PostgreSQL. Схема базы данных включает:
+- Пользователи и аутентификация
+- Цели с иерархической структурой
+- Задачи с подзадачами
+- Этапы целей
+- Метрики и привычки
+- Категории
+- Система достижений и геймификации
 
 ## 🌐 Деплой
 
