@@ -39,9 +39,10 @@ interface TaskItemProps {
   task: Task
   onToggle: () => void
   onEdit: (task: Task) => void
+  onDelete: (taskId: string) => void
 }
 
-function TaskItem({ task, onToggle, onEdit }: TaskItemProps) {
+function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) {
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     onToggle()
@@ -91,6 +92,17 @@ function TaskItem({ task, onToggle, onEdit }: TaskItemProps) {
         >
           <Edit className="w-4 h-4 text-gray-500" />
         </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onDelete(task.id)
+          }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
+          title="Delete task"
+        >
+          <Trash2 className="w-4 h-4 text-red-500" />
+        </button>
       </div>
     </div>
   )
@@ -107,10 +119,12 @@ export function GoalDetailPage() {
   const [showCreateStage, setShowCreateStage] = useState(false)
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showEditTask, setShowEditTask] = useState(false)
+  const [showDeleteTask, setShowDeleteTask] = useState(false)
   const [showCreateMetric, setShowCreateMetric] = useState(false)
   const [showMetricAnalytics, setShowMetricAnalytics] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<Metric | undefined>()
   const [selectedTask, setSelectedTask] = useState<Task | undefined>()
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>()
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set())
 
@@ -121,6 +135,7 @@ export function GoalDetailPage() {
   const stages = useApiDataStore(state => state.stages)
   const metricEntries = useApiDataStore(state => state.metricEntries)
   const updateTask = useApiDataStore(state => state.updateTask)
+  const deleteTask = useApiDataStore(state => state.deleteTask)
   const deleteGoal = useApiDataStore(state => state.deleteGoal)
   const error = useApiDataStore(state => state.error)
   const storeLoading = useApiDataStore(state => state.isLoading)
@@ -424,6 +439,13 @@ export function GoalDetailPage() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Этапы</h2>
+            <button
+              onClick={() => setShowCreateStage(true)}
+              className="btn-secondary text-sm"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Добавить этап
+            </button>
           </div>
           <div className="space-y-3">
             {goalStages.map((stage) => {
@@ -469,6 +491,10 @@ export function GoalDetailPage() {
                             onEdit={(task) => {
                               setSelectedTask(task)
                               setShowEditTask(true)
+                            }}
+                            onDelete={(taskId) => {
+                              setTaskToDelete(taskId)
+                              setShowDeleteTask(true)
                             }}
                           />
                         ))}
@@ -528,6 +554,10 @@ export function GoalDetailPage() {
               onEdit={(task) => {
                 setSelectedTask(task)
                 setShowEditTask(true)
+              }}
+              onDelete={(taskId) => {
+                setTaskToDelete(taskId)
+                setShowDeleteTask(true)
               }}
             />
           ))}
@@ -816,7 +846,7 @@ export function GoalDetailPage() {
         />
       </Modal>
 
-      {/* Delete Confirmation */}
+      {/* Delete Goal Confirmation */}
       <ConfirmModal
         isOpen={showDeleteGoal}
         onClose={() => setShowDeleteGoal(false)}
@@ -824,6 +854,23 @@ export function GoalDetailPage() {
         title="Delete Goal"
         message={`Are you sure you want to delete "${goal.name}"? This action cannot be undone.`}
         confirmText="Delete"
+        variant="danger"
+      />
+
+      {/* Delete Task Confirmation */}
+      <ConfirmModal
+        isOpen={showDeleteTask}
+        onClose={() => setShowDeleteTask(false)}
+        onConfirm={async () => {
+          if (taskToDelete) {
+            await deleteTask(taskToDelete)
+            setTaskToDelete(null)
+            setShowDeleteTask(false)
+          }
+        }}
+        title="Удалить задачу"
+        message="Вы уверены, что хотите удалить эту задачу? Это действие нельзя отменить."
+        confirmText="Удалить"
         variant="danger"
       />
 
