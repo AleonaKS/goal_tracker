@@ -54,16 +54,16 @@ export const taskSchema = z.object({
   name: z.string().min(1, 'Введите название задачи').max(100, 'Максимум 100 символов'),
   goalId: z.string(),
   stageId: z.string().optional(),
-  startDate: z.date().optional(),
-  dueDate: z.date().optional(),
+  startDate: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
   isPeriodBased: z.boolean(),
   priority: z.number().min(1).max(5),
   complexity: z.number().min(1).max(5),
   weight: z.number().min(0.1).max(10),
-  // Time blocking fields
-  duration: z.number().min(1).max(480).optional(),
-  startTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Формат: HH:mm').optional(),
-  endTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Формат: HH:mm').optional(),
+  // Time blocking fields - allow null/undefined
+  duration: z.number().min(1).max(480).nullable().optional(),
+  startTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Формат: HH:mm').nullable().optional(),
+  endTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Формат: HH:mm').nullable().optional(),
 })
 
 export type TaskFormData = z.infer<typeof taskSchema>

@@ -78,9 +78,7 @@ function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) {
           {task.name}
         </p>
         {task.dueDate && (
-          <p className="text-xs text-gray-500">
-            Due: {formatDate(task.dueDate)}
-          </p>
+          <p className="text-xs text-gray-500">{formatDate(task.dueDate)}</p>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -120,6 +118,9 @@ export function GoalDetailPage() {
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showEditTask, setShowEditTask] = useState(false)
   const [showDeleteTask, setShowDeleteTask] = useState(false)
+  const [showEditStage, setShowEditStage] = useState(false)
+  const [showDeleteStage, setShowDeleteStage] = useState(false)
+  const [selectedStage, setSelectedStage] = useState<any>(null)
   const [showCreateMetric, setShowCreateMetric] = useState(false)
   const [showMetricAnalytics, setShowMetricAnalytics] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<Metric | undefined>()
@@ -136,6 +137,8 @@ export function GoalDetailPage() {
   const metricEntries = useApiDataStore(state => state.metricEntries)
   const updateTask = useApiDataStore(state => state.updateTask)
   const deleteTask = useApiDataStore(state => state.deleteTask)
+  const updateStage = useApiDataStore(state => state.updateStage)
+  const deleteStage = useApiDataStore(state => state.deleteStage)
   const deleteGoal = useApiDataStore(state => state.deleteGoal)
   const error = useApiDataStore(state => state.error)
   const storeLoading = useApiDataStore(state => state.isLoading)
@@ -454,22 +457,48 @@ export function GoalDetailPage() {
 
               return (
                 <div key={stage.id} className="border border-gray-200 rounded-lg">
-                  <button
-                    onClick={() => toggleStage(stage.id)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                  <div
+                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors group"
                   >
-                    <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleStage(stage.id)}
+                      className="flex items-center gap-2 flex-1 text-left"
+                    >
                       {isExpanded ? (
                         <ChevronDown className="w-4 h-4 text-gray-400" />
                       ) : (
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                       )}
                       <span className="font-medium text-gray-900">{stage.name}</span>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">
+                        {formatDate(stage.startDate)} - {formatDate(stage.dueDate)}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedStage(stage)
+                          setShowEditStage(true)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-200 rounded"
+                        title="Редактировать этап"
+                      >
+                        <Edit className="w-4 h-4 text-gray-500" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedStage(stage)
+                          setShowDeleteStage(true)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
+                        title="Удалить этап"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {formatDate(stage.startDate)} - {formatDate(stage.dueDate)}
-                    </div>
-                  </button>
+                  </div>
 
                   {isExpanded && (
                     <div className="p-3 pt-0 border-t border-gray-100">
@@ -577,7 +606,7 @@ export function GoalDetailPage() {
               onClick={() => setShowCreateMetric(true)}
               className="btn-secondary text-sm"
             >
-              Add
+              Добавить
             </button>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -623,8 +652,7 @@ export function GoalDetailPage() {
           {/* Timeline Header */}
           <div className="mb-4">
             <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-              <span>Начало проекта</span>
-              <span>Текущая дата</span>
+              <span>Начало проекта</span> 
               <span>Завершение</span>
             </div>
             <div className="relative h-2 bg-gradient-to-r from-blue-200 via-gray-200 to-green-200 rounded-full">
@@ -662,7 +690,7 @@ export function GoalDetailPage() {
                         <h3 className="font-medium text-gray-900 truncate pr-2">{item.name}</h3>
                         <div className="flex items-center gap-2 text-xs text-gray-500 flex-shrink-0">
                           <CalendarDays className="w-3 h-3" />
-                          <span>{Math.ceil(duration / (1000 * 60 * 60 * 24))} дней</span>
+                          <span>{ Math.ceil(duration / (1000 * 60 * 60 * 24))} дней</span>
                         </div>
                       </div>
 
@@ -781,6 +809,49 @@ export function GoalDetailPage() {
           onCancel={() => setShowCreateStage(false)}
         />
       </Modal>
+
+      {/* Edit Stage Modal */}
+      <Modal
+        isOpen={showEditStage}
+        onClose={() => {
+          setShowEditStage(false)
+          setSelectedStage(null)
+        }}
+        title="Редактировать этап"
+      >
+        <StageForm
+          goalId={goal.id}
+          initialData={selectedStage || undefined}
+          onSubmit={() => {
+            setShowEditStage(false)
+            setSelectedStage(null)
+          }}
+          onCancel={() => {
+            setShowEditStage(false)
+            setSelectedStage(null)
+          }}
+        />
+      </Modal>
+
+      {/* Delete Stage Confirmation */}
+      <ConfirmModal
+        isOpen={showDeleteStage}
+        onClose={() => {
+          setShowDeleteStage(false)
+          setSelectedStage(null)
+        }}
+        onConfirm={async () => {
+          if (selectedStage?.id) {
+            await deleteStage(selectedStage.id)
+            setSelectedStage(null)
+            setShowDeleteStage(false)
+          }
+        }}
+        title="Удалить этап"
+        message={`Вы уверены, что хотите удалить этап "${selectedStage?.name || ''}"? Все задачи этого этапа будут удалены. Это действие нельзя отменить.`}
+        confirmText="Удалить"
+        variant="danger"
+      />
 
       {/* Create Task Modal */}
       <Modal

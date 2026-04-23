@@ -397,6 +397,13 @@ export async function createTask(task: TaskCreateInput): Promise<Task> {
 }
 
 export async function updateTask(id: string, updates: Partial<Task>): Promise<Task> {
+  console.log('updateTask INPUT - id:', id)
+  console.log('updateTask INPUT - updates:', updates)
+  console.log('updateTask INPUT - dueDate:', updates.dueDate, 'type:', typeof updates.dueDate, 'instanceof Date:', updates.dueDate instanceof Date)
+  console.log('updateTask INPUT - priority:', updates.priority, 'type:', typeof updates.priority)
+  console.log('updateTask INPUT - complexity:', updates.complexity, 'type:', typeof updates.complexity)
+  console.log('updateTask INPUT - weight:', updates.weight, 'type:', typeof updates.weight)
+  
   // Transform camelCase to snake_case for database
   const dbUpdates: any = {}
 
@@ -410,18 +417,42 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   if (updates.complexity !== undefined) dbUpdates.complexity = updates.complexity
   if (updates.weight !== undefined) dbUpdates.weight = updates.weight
   if (updates.completed !== undefined) dbUpdates.completed = updates.completed
+  
+  // Helper to convert date to YYYY-MM-DD string for database
+  const formatDateForDB = (dateValue: any): string | null => {
+    if (!dateValue) return null
+    if (dateValue instanceof Date) {
+      return dateValue.toISOString().split('T')[0]
+    }
+    if (typeof dateValue === 'string') {
+      // If already YYYY-MM-DD format, return as is
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+        return dateValue
+      }
+      // If DD.MM.YYYY format, convert to YYYY-MM-DD
+      const ddmmyyyy = dateValue.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+      if (ddmmyyyy) {
+        return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`
+      }
+      // Try to parse as date
+      const d = new Date(dateValue)
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0]
+      }
+    }
+    return null
+  }
+  
   // Handle Date conversion for dueDate
   if (updates.dueDate !== undefined) {
-    dbUpdates.due_date = updates.dueDate instanceof Date
-      ? updates.dueDate.toISOString().split('T')[0]
-      : updates.dueDate
+    const formatted = formatDateForDB(updates.dueDate)
+    if (formatted) dbUpdates.due_date = formatted
   }
   if (updates.isPeriodBased !== undefined) dbUpdates.is_period_based = updates.isPeriodBased
   // Handle Date conversion for startDate
   if (updates.startDate !== undefined) {
-    dbUpdates.start_date = updates.startDate instanceof Date
-      ? updates.startDate.toISOString().split('T')[0]
-      : updates.startDate
+    const formatted = formatDateForDB(updates.startDate)
+    if (formatted) dbUpdates.start_date = formatted
   }
   if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt
 

@@ -3,9 +3,16 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { taskSchema, type TaskFormData } from '@/lib/validation'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
-import { formatDateForInput } from '@/lib/dateUtils'
 import type { Task } from '@/types'
 import React from 'react'
+
+// Helper to format date for date input (YYYY-MM-DD)
+const formatDateForInput = (date: Date | string | null | undefined): string => {
+  if (!date) return ''
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return ''
+  return d.toISOString().split('T')[0]
+}
 
 interface TaskFormProps {
   goalId: string
@@ -16,7 +23,7 @@ interface TaskFormProps {
 }
 
 export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: TaskFormProps) {
-  const { stages, createTask, updateTask } = useApiDataStore()
+  const { stages, createTask, updateTask, error: apiError, isLoading } = useApiDataStore()
   const { user } = useAuthStore()
 
   const goalStages = stages.filter(s => s.goalId === goalId)
@@ -26,6 +33,7 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<TaskFormData>({
     resolver: zodResolver(taskSchema),
@@ -33,8 +41,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
       name: initialData?.name || '',
       goalId,
       stageId: stageId || initialData?.stageId,
-      startDate: initialData?.startDate ? new Date(initialData.startDate) : undefined,
-      dueDate: initialData?.dueDate ? new Date(initialData.dueDate) : undefined,
       isPeriodBased: initialData?.isPeriodBased || false,
       priority: initialData?.priority || 3,
       complexity: initialData?.complexity || 3,
@@ -44,6 +50,20 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
       endTime: initialData?.endTime,
     },
   })
+
+  // Set date values when initialData changes - convert to YYYY-MM-DD for input
+  React.useEffect(() => {
+    if (initialData?.startDate) {
+      setValue('startDate', formatDateForInput(initialData.startDate) as any)
+    } else {
+      setValue('startDate', undefined)
+    }
+    if (initialData?.dueDate) {
+      setValue('dueDate', formatDateForInput(initialData.dueDate) as any)
+    } else {
+      setValue('dueDate', undefined)
+    }
+  }, [initialData, setValue])
 
   const isPeriodBased = watch('isPeriodBased')
   const duration = watch('duration')
@@ -64,6 +84,11 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
   }, [startTime, duration, setValue])
 
   const handleFormSubmit = async (data: TaskFormData) => {
+    console.log('=== FORM SUBMIT TRIGGERED ===')
+    console.log('Form raw data:', data)
+    console.log('dueDate type:', typeof data.dueDate, data.dueDate)
+    console.log('priority:', data.priority, 'complexity:', data.complexity, 'weight:', data.weight)
+    
     const taskData = {
       name: data.name,
       goalId: data.goalId,
@@ -86,9 +111,8 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     }
 
     try {
-      console.log('Creating task with data:', taskData)
+      console.log('Submitting taskData:', taskData)
       console.log('User ID:', user?.id)
-      console.log('User object:', user)
       
       if (!user?.id) {
         console.error('No user ID available!')
@@ -107,8 +131,20 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     }
   }
 
+  // Log form errors for debugging
+  console.log('Current form errors:', errors)
+  console.log('Form isSubmitting:', isSubmitting)
+  console.log('Form values:', watch())
+
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+    <form 
+      onSubmit={handleSubmit(handleFormSubmit)} 
+      className="space-y-4"
+      onInvalid={(e) => {
+        console.log('Form validation failed:', e)
+        e.preventDefault()
+      }}
+    >
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Название задачи *
@@ -162,7 +198,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
                 type="date"
                 {...register('startDate')}
                 className="input"
-                defaultValue={formatDateForInput(initialData?.startDate)}
               />
             </div>
             <div>
@@ -173,7 +208,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
                 type="date"
                 {...register('dueDate')}
                 className="input"
-                defaultValue={formatDateForInput(initialData?.dueDate)}
               />
             </div>
           </>
@@ -186,7 +220,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
               type="date"
               {...register('dueDate')}
               className="input"
-              defaultValue={formatDateForInput(initialData?.dueDate)}
             />
           </div>
         )}
@@ -204,6 +237,9 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
             min={1}
             max={5}
           />
+          {errors.priority && (
+            <p className="mt-1 text-sm text-red-600">{errors.priority.message}</p>
+          )}
         </div>
 
         <div>
@@ -217,6 +253,9 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
             min={1}
             max={5}
           />
+          {errors.complexity && (
+            <p className="mt-1 text-sm text-red-600">{errors.complexity.message}</p>
+          )}
         </div>
 
         <div>
@@ -231,6 +270,9 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
             min={0.1}
             max={10}
           />
+          {errors.weight && (
+            <p className="mt-1 text-sm text-red-600">{errors.weight.message}</p>
+          )}
         </div>
       </div>
 
@@ -304,16 +346,33 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
         )}
       </div>
 
+      {/* Global form errors */}
+      {(errors.startDate || errors.dueDate) && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-600">
+            {errors.startDate?.message || errors.dueDate?.message}
+          </p>
+        </div>
+      )}
+
+      {/* API Error */}
+      {apiError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-600 font-medium">Ошибка сохранения:</p>
+          <p className="text-sm text-red-600">{apiError}</p>
+        </div>
+      )}
+
       <div className="flex gap-3 pt-4">
         <button type="button" onClick={onCancel} className="btn-secondary flex-1">
           Отмена
         </button>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoading}
           className="btn-primary flex-1"
         >
-          {isSubmitting ? 'Сохранение...' : initialData?.id ? 'Сохранить' : 'Создать'}
+          {isSubmitting || isLoading ? 'Сохранение...' : initialData?.id ? 'Сохранить' : 'Создать'}
         </button>
       </div>
     </form>
