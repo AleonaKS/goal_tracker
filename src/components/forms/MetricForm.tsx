@@ -475,17 +475,17 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
         <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
           {predefinedUnits.map((unit) => (
             <button
-              key={unit.value}
-              onClick={() => handleUnitSelect(unit.value)}
+              key={unit.symbol}
+              onClick={() => handleUnitSelect(unit.symbol)}
               className={cn(
                 'p-3 rounded-lg text-left border transition-colors',
-                selectedUnit === unit.value
+                selectedUnit === unit.symbol
                   ? 'border-primary-500 bg-primary-50'
                   : 'border-gray-200 hover:border-gray-300'
               )}
             >
-              <div className="font-medium text-gray-900">{unit.label}</div>
-              <div className="text-sm text-gray-500">{unit.value}</div>
+              <div className="font-medium text-gray-900">{unit.name}</div>
+              <div className="text-sm text-gray-500">{unit.symbol}</div>
             </button>
           ))}
         </div>
