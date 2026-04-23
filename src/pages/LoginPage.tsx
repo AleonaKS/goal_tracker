@@ -18,8 +18,8 @@ export function LoginPage() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'demo@example.com',
-      password: 'demo123',
+      email: 'hello@mail.ru',
+      password: '1234as',
     },
   })
 
@@ -56,7 +56,7 @@ export function LoginPage() {
                 type="email"
                 {...register('email')}
                 className="input"
-                placeholder="demo@example.com"
+                placeholder="hello@mail.ru"
               />
               {errors.email && (
                 <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
@@ -105,7 +105,7 @@ export function LoginPage() {
 
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-700 text-center">
-              <strong>Демо доступ:</strong> email: demo@example.com, пароль: demo123
+              <strong>Демо доступ:</strong> email: hello@mail.ru, пароль: 1234as
             </p>
             <p className="text-xs text-blue-600 text-center mt-1">
               Данные уже введены в поля, просто нажмите "Войти"
