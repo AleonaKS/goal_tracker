@@ -131,3 +131,59 @@ supabase/
 *.njsproj
 *.sln
 *.sw
+
+
+# Unused/legacy code (not part of current Supabase architecture)
+backend/
+superbase/
+api/
+src/pages/MetricsPageNew.tsx
+
+# Demo mode files (should not be in production)
+# Note: src/lib/demo.ts contains demo mode logic
+
+# Empty directories
+supabase/migrations/
+.github/workflows/
+
+# Dead stores
+src/stores/mongoStore.ts
+src/stores/dataStore.ts
+src/stores/supabaseAuthStore.ts
+
+# Unused components
+src/components/MetricDetailModal.tsx
+src/components/MetricDetailAnalytics.tsx
+src/components/DashboardRedesigned.tsx
+src/components/DashboardWidgets.tsx
+src/components/OverachievementTracker.tsx
+src/components/CountdownWidget.tsx
+src/components/DragDropProvider.tsx
+src/components/FavoriteFilters.tsx
+src/components/FavoriteFiltersNew.tsx
+src/components/CustomAchievementForm.tsx
+src/components/UnitSelectorModal.tsx
+src/components/UnitSelectorModalNew.tsx
+src/components/MobileGoalCard.tsx
+src/components/MobileTaskCard.tsx
+src/components/MobileMetricCard.tsx
+src/components/UniversalDetailModal.tsx
+src/components/RadarChart.tsx
+
+# Unused forms
+src/components/forms/MetricEntryForm.tsx
+src/components/forms/SubtaskForm.tsx
+src/components/forms/UnitSelectModal.tsx
+
+# Unused hooks, libs, types
+src/hooks/useGoalFilters.ts
+src/lib/api-client.ts
+src/lib/dateUtils.ts
+src/lib/metricReset.ts
+src/lib/units.ts
+src/lib/optimistic-updates.ts
+src/types/mongodb.ts
+
+# SQL migration scripts (one-off, not referenced by code)
+*.sql
+!supabase/migrations/
