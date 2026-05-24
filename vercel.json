@@ -8,5 +8,8 @@
       "entrypoint": "backend",
       "routePrefix": "/_/backend"
     }
+  },
+  "integrations": {
+    "supabase": false
   }
 }
