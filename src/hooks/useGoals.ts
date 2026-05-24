@@ -12,12 +12,17 @@ export interface GoalWithProgress extends Goal {
 }
 
 export function useGoals(filter?: GoalFilter, sort?: GoalSort) {
-  const { goals, tasks, metrics, metricEntries, subtasks } = useApiDataStore()
+  const { goals, tasks, metrics, metricEntries, subtasks, stages } = useApiDataStore()
   const { user } = useApiDataStore()
 
   const goalsWithProgress = useMemo(() => {
     return goals.map((goal): GoalWithProgress => {
-      const goalTasks = tasks.filter(t => t.goalId === goal.id)
+      // Get stages for this goal to include tasks with null goalId
+      const goalStageIds = stages.filter(s => s.goalId === goal.id).map(s => s.id)
+      // Include tasks with goalId OR belonging to goal's stages
+      const goalTasks = tasks.filter(t => 
+        t.goalId === goal.id || (t.stageId && goalStageIds.includes(t.stageId))
+      )
       const totalTasks = goalTasks.length
       const completedTasks = goalTasks.filter(t => t.completed).length
 
@@ -59,7 +64,7 @@ export function useGoals(filter?: GoalFilter, sort?: GoalSort) {
         calculatedStatus: goal.status === 'frozen' ? 'frozen' : calculatedStatus,
       }
     })
-  }, [goals, tasks, metrics, metricEntries, subtasks, user])
+  }, [goals, tasks, metrics, metricEntries, subtasks, stages, user])
 
   const filteredGoals = useMemo(() => {
     let result = goalsWithProgress
@@ -140,12 +145,17 @@ export function useGoal(goalId: string) {
     if (!goal) return null
 
     const goalStages = stages.filter(s => s.goalId === goalId)
-    const goalTasks = tasks.filter(t => t.goalId === goalId && !t.stageId)
+    const goalStageIds = goalStages.map(s => s.id)
+    // Include tasks with goalId OR belonging to goal's stages
+    const allGoalTasks = tasks.filter(t => 
+      t.goalId === goalId || (t.stageId && goalStageIds.includes(t.stageId))
+    )
+    const goalTasks = allGoalTasks.filter(t => !t.stageId)
     const goalMetrics = metrics.filter(m => m.goalId === goalId)
     const category = categories.find(c => c.id === goal.categoryId)
 
-    const totalTasks = tasks.filter(t => t.goalId === goalId).length
-    const completedTasks = tasks.filter(t => t.goalId === goalId && t.completed).length
+    const totalTasks = allGoalTasks.length
+    const completedTasks = allGoalTasks.filter(t => t.completed).length
 
     let progress = 0
     let currentMetricValue = 0

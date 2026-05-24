@@ -23,7 +23,7 @@ export const goalSchema = z.object({
   startDate: z.date().optional(),
   deadlineType: z.enum(['none', 'month_year', 'year', 'specific_date']),
   deadlineValue: z.union([z.string(), z.date()]).optional(),
-  priority: z.number().min(1).max(5),
+  priority: z.number().min(0).max(3).default(0),
   progressCalculation: z.enum(['by_tasks', 'by_metric']),
   progressMetricId: z.string().optional(),
   status: z.enum(['in_progress', 'completed', 'overdue', 'planned', 'frozen']).optional(),
@@ -52,13 +52,11 @@ export type StageFormData = z.infer<typeof stageSchema>
 
 export const taskSchema = z.object({
   name: z.string().min(1, 'Введите название задачи').max(100, 'Максимум 100 символов'),
-  goalId: z.string(),
-  stageId: z.string().optional(),
+  goalId: z.string().nullable().optional(),
+  stageId: z.string().nullable().optional(),
   startDate: z.coerce.date().optional(),
   dueDate: z.coerce.date().optional(),
-  isPeriodBased: z.boolean(),
   priority: z.number().min(1).max(5),
-  complexity: z.number().min(1).max(5),
   weight: z.number().min(0.1).max(10),
   // Time blocking fields - allow null/undefined
   duration: z.number().min(1).max(480).nullable().optional(),
@@ -76,7 +74,7 @@ export type SubtaskFormData = z.infer<typeof subtaskSchema>
 
 export const metricSchema = z.object({
   name: z.string().min(1, 'Введите название метрики').max(100, 'Максимум 100 символов'),
-  type: z.enum(['habit', 'counter']),
+  type: z.enum(['habit', 'counter', 'simple_habit']),
   description: z.string().max(500, 'Максимум 500 символов').optional(),
   categoryId: z.string().min(1, 'Выберите категорию'),
   goalId: z.string().optional(),
@@ -85,20 +83,20 @@ export const metricSchema = z.object({
   unit: z.string().optional().default(''),
   inputMode: z.enum(['fixed_step', 'manual']),
   stepValue: z.number().min(0).optional(),
-  periodicity: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'every_n_days', 'weekdays']),
+  periodicity: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly', 'every_n_days', 'weekdays']),
   nDays: z.number().min(1).optional(),
-  weekdays: z.array(z.number().min(0).max(6)).optional(),
+  weekdays: z.array(z.number().min(1).max(7)).optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Введите корректный цвет'),
   // Auto-reset and target increase
   autoResetEnabled: z.boolean().default(false),
-  resetPeriodicity: z.enum(['daily', 'weekly', 'monthly', 'yearly']).optional(),
-  resetDayOfWeek: z.number().min(0).max(6).optional(),
+  resetPeriodicity: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly', 'every_n_days', 'weekdays', 'custom']).optional(),
+  resetWeekdays: z.array(z.number().min(0).max(6)).optional(),
   resetDayOfMonth: z.number().min(1).max(31).optional(),
-  resetMonthOfYear: z.number().min(1).max(12).optional(),
+  resetCustomDays: z.number().min(1).optional(),
   // Target increase
   targetIncreaseEnabled: z.boolean().default(false),
   targetIncreaseValue: z.number().min(0).optional(),
-  targetIncreasePeriodicity: z.enum(['daily', 'weekly', 'monthly', 'yearly']).optional(),
+  targetIncreasePeriodicity: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'every_n_days', 'weekdays', 'custom']).optional(),
 }).refine((data) => {
   if (data.inputMode === 'fixed_step' && !data.stepValue) {
     return false
@@ -132,7 +130,7 @@ export const metricEntrySchema = z.object({
   value: z.number(),
   finalValue: z.number(),
   note: z.string().max(200, 'Максимум 200 символов').optional(),
-  timestamp: z.date(),
+  entryDate: z.date(),
   isAddition: z.boolean(),
 })
 

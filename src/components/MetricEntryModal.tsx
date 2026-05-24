@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Minus, Calendar, Clock } from 'lucide-react'
 import { Modal } from './Modal'
 import { useApiDataStore } from '@/stores/apiDataStore'
+import useGamificationActions from '@/hooks/useGamificationActions'
 import type { Metric } from '@/types'
 
 interface MetricEntryModalProps {
@@ -12,15 +13,16 @@ interface MetricEntryModalProps {
 }
 
 export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: MetricEntryModalProps) {
-  const { createMetricEntry } = useApiDataStore()
+  const { createMetricEntry: createMetricEntryWithGamification } = useGamificationActions()
   const [isAddition, setIsAddition] = useState(true)
   const [value, setValue] = useState('')
   const [finalValue, setFinalValue] = useState('')
   const [note, setNote] = useState('')
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0])
   const [entryTime, setEntryTime] = useState(new Date().toTimeString().slice(0, 5))
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const stepValue = metric.stepValue || 1
+  const stepValue = metric.stepValue ?? 1
 
   const handleQuickChange = (add: boolean) => {
     setIsAddition(add)
@@ -31,21 +33,16 @@ export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: Me
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const entryValue = parseFloat(value) || 0
     const finalEntryValue = parseFloat(finalValue) || 0
 
+    setIsSubmitting(true)
+
     try {
-      await createMetricEntry({
-        metricId: metric.id,
-        entryDate: new Date(`${entryDate}T${entryTime}`),
-        value: entryValue,
-        finalValue: finalEntryValue,
-        note: note.trim() || undefined,
-        isAddition,
-        isOverachievement: finalEntryValue > metric.targetValue,
-        overachievementValue: Math.max(0, finalEntryValue - metric.targetValue)
-      })
+      // Создаем запись на сервере с выбранной датой
+      const [y, m, d] = entryDate.split('-').map(Number)
+      await createMetricEntryWithGamification(metric.id, entryValue, note.trim() || undefined, new Date(y, m - 1, d))
 
       // Reset form
       setValue('')
@@ -55,6 +52,8 @@ export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: Me
       onClose()
     } catch (error) {
       console.error('Failed to create metric entry:', error)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -74,7 +73,7 @@ export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: Me
               }`}
             >
               <Plus className="w-5 h-5" />
-              <span>+{stepValue} {metric.customUnit || 'unit'}</span>
+              <span>{stepValue} {metric.customUnit || 'unit'}</span>
             </button>
             <button
               type="button"
@@ -86,7 +85,7 @@ export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: Me
               }`}
             >
               <Minus className="w-5 h-5" />
-              <span>-{stepValue} {metric.customUnit || 'unit'}</span>
+              <span>{stepValue} {metric.customUnit || 'unit'}</span>
             </button>
           </div>
         )}

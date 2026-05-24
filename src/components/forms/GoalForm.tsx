@@ -1,10 +1,15 @@
+import { useEffect, useRef } from 'react'
+import { Flag } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { goalSchema, type GoalFormData } from '@/lib/validation'
 import type { GoalStatus } from '@/types'
+import { cn } from '@/lib/utils'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
 import { demoUser, isDemoMode } from '@/lib/demo'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 interface GoalFormProps {
   initialData?: Partial<GoalFormData> & { _id?: string }
@@ -23,7 +28,7 @@ const statusOptions: { value: GoalStatus; label: string }[] = [
 export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
   const { categories, metrics, createGoal, updateGoal } = useApiDataStore()
   const { user } = useAuthStore()
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<GoalFormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<GoalFormData>({
     resolver: zodResolver(goalSchema),
     defaultValues: {
       name: initialData?.name || '',
@@ -33,7 +38,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
       deadlineType: initialData?.deadlineType || 'none',
       deadlineValue: initialData?.deadlineValue || '',
       status: initialData?.status ?? 'in_progress',
-      priority: initialData?.priority || 3,
+      priority: initialData?.priority ?? 0,
       progressCalculation: initialData?.progressCalculation || 'by_tasks',
       progressMetricId: initialData?.progressMetricId || '',
       isFrozen: initialData?.isFrozen || false,
@@ -41,8 +46,20 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
     },
   })
 
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
   const deadlineType = watch('deadlineType')
   const progressCalculation = watch('progressCalculation')
+  const priority = watch('priority')
+
+  // Reset deadlineValue when deadlineType changes (but not on initial render)
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    setValue('deadlineValue', '')
+  }, [deadlineType, setValue])
 
   const handleFormSubmit = async (data: GoalFormData) => {
     try {
@@ -50,6 +67,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
       const effectiveUserId = isDemoMode() ? demoUser.id : (user?.id || '')
       
       console.log('GoalForm submit - userId:', effectiveUserId, 'isDemo:', isDemoMode())
+      console.log('GoalForm submit - deadlineType:', data.deadlineType, 'deadlineValue:', data.deadlineValue, 'type:', typeof data.deadlineValue)
       
       const submitData: any = {
         name: data.name,
@@ -87,7 +105,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4" noValidate>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Название цели *
@@ -193,32 +211,46 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Год
           </label>
-          <input
-            type="number"
-            {...register('deadlineValue')}
-            className="input"
-            min="2024"
-            max="2100"
-            placeholder="2024"
-          />
+          <select {...register('deadlineValue')} className="input">
+            {Array.from({ length: 11 }, (_, i) => {
+              const year = new Date().getFullYear() + i
+              return (
+                <option key={year} value={String(year)}>
+                  {year}
+                </option>
+              )
+            })}
+          </select>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Приоритет (1-5)
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Приоритет
           </label>
-          <input
-            type="number"
-            {...register('priority', { valueAsNumber: true })}
-            className="input"
-            min={1}
-            max={5}
-          />
-          {errors.priority && (
-            <p className="mt-1 text-sm text-red-600">{errors.priority.message}</p>
-          )}
+          <div className="flex gap-2">
+            {[
+              { value: 1, color: 'text-blue-500', label: 'Низкий' },
+              { value: 2, color: 'text-yellow-500', label: 'Средний' },
+              { value: 3, color: 'text-red-500', label: 'Высокий' },
+            ].map(({ value, color, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setValue('priority', value)}
+                className={cn(
+                  "flex flex-col items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all",
+                  priority === value
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                )}
+              >
+                <Flag className={cn("w-5 h-5", color)} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div>
@@ -240,8 +272,8 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
           Расчёт прогресса
         </label>
         <select {...register('progressCalculation')} className="input">
-          <option value="by_tasks">By tasks</option>
-          <option value="by_metric">By metric/counter</option>
+          <option value="by_tasks">По задачам</option>
+          <option value="by_metric">По метрике</option>
         </select>
       </div>
 
@@ -287,6 +319,8 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
           </span>
         </label>
       </div>
+
+      <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
 
       <div className="flex gap-3 pt-4">
         <button type="button" onClick={onCancel} className="btn-secondary flex-1">

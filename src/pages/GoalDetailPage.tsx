@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { 
-  ArrowLeft, 
-  Calendar, 
-  Target, 
-  Flag, 
-  CheckCircle, 
-  AlertCircle, 
-  Clock, 
-  BarChart3, 
+import { useState, useMemo, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Calendar,
+  Target,
+  Flag,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  BarChart3,
   Plus,
   Edit,
   Trash2,
@@ -18,8 +18,10 @@ import {
   FileText,
   TrendingUp,
   CalendarDays,
-  Circle
+  Circle,
+  RotateCcw,
 } from 'lucide-react'
+import { TimelineItem } from '@/components/TimelineItem'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { Modal, ConfirmModal } from '@/components/Modal'
 import { EditModal } from '@/components/EditModal'
@@ -30,7 +32,8 @@ import { StageForm } from '@/components/forms/StageForm'
 import { TaskForm } from '@/components/forms/TaskForm'
 import { MetricForm } from '@/components/forms/MetricForm'
 import { MetricAnalyticsModal } from '@/components/MetricAnalyticsModal'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, getEntriesForCurrentPeriod } from '@/lib/utils'
+import { calculateGoalStatusFromGoal } from '@/lib/calculations'
 import type { Task, Metric } from '@/types'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
@@ -42,10 +45,42 @@ interface TaskItemProps {
   onDelete: (taskId: string) => void
 }
 
-function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) {
-  const handleClick = (e: React.MouseEvent) => {
+function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) { 
+  const [optimisticCompleted, setOptimisticCompleted] = useState(task.completed)
+  const [isPending, setIsPending] = useState(false)
+  const [showError, setShowError] = useState(false)
+ 
+  useEffect(() => {
+    setOptimisticCompleted(task.completed)
+    setShowError(false)
+  }, [task.completed])
+
+  const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault()
-    onToggle()
+    if (isPending) return
+
+    const newCompleted = !optimisticCompleted
+     
+    setOptimisticCompleted(newCompleted)
+    setIsPending(true)
+    setShowError(false)
+
+    try { 
+      await onToggle() 
+      setIsPending(false)
+    } catch (error) {
+      console.error('Failed to toggle task:', error) 
+      setOptimisticCompleted(!newCompleted)
+      setIsPending(false)
+      setShowError(true) 
+      setTimeout(() => setShowError(false), 3000)
+    }
+  }
+
+  const handleRollback = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setOptimisticCompleted(task.completed)
+    setShowError(false)
   }
 
   const handleEdit = (e: React.MouseEvent) => {
@@ -55,16 +90,32 @@ function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) {
   }
 
   return (
-    <div className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors group">
+    <div className={cn(
+      "flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors group",
+      isPending && "bg-yellow-50/50",
+      showError && "bg-red-50/50"
+    )}>
+      {/* Индикатор ошибки */}
+      {showError && (
+        <button
+          onClick={handleRollback}
+          className="absolute -left-2 top-1/2 -translate-y-1/2 p-1 bg-red-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Откатить изменение"
+        >
+          <RotateCcw className="w-3 h-3 text-red-500" />
+        </button>
+      )}
       <button
         onClick={handleClick}
         type="button"
+        disabled={isPending}
         className={cn(
-          'mt-0.5 flex-shrink-0',
-          task.completed ? 'text-green-500' : 'text-gray-400 hover:text-gray-600'
+          'mt-0.5 flex-shrink-0 transition-colors',
+          optimisticCompleted ? 'text-green-500' : 'text-gray-400 hover:text-gray-600',
+          isPending && 'text-yellow-500 animate-pulse'
         )}
       >
-        {task.completed ? (
+        {optimisticCompleted ? (
           <CheckCircle className="w-5 h-5" />
         ) : (
           <Circle className="w-5 h-5" />
@@ -73,7 +124,8 @@ function TaskItem({ task, onToggle, onEdit, onDelete }: TaskItemProps) {
       <div className="flex-1 min-w-0">
         <p className={cn(
           'font-medium',
-          task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+          optimisticCompleted ? 'text-gray-500 line-through' : 'text-gray-900',
+          isPending && 'text-yellow-600'
         )}>
           {task.name}
         </p>
@@ -130,6 +182,8 @@ export function GoalDetailPage() {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set())
 
   const goals = useApiDataStore(state => state.goals)
+  const fetchGoals = useApiDataStore(state => state.fetchGoals)
+  const fetchStages = useApiDataStore(state => state.fetchStages)
   const allTasks = useApiDataStore(state => state.tasks)
   const categories = useApiDataStore(state => state.categories)
   const metrics = useApiDataStore(state => state.metrics)
@@ -141,20 +195,29 @@ export function GoalDetailPage() {
   const deleteStage = useApiDataStore(state => state.deleteStage)
   const deleteGoal = useApiDataStore(state => state.deleteGoal)
   const error = useApiDataStore(state => state.error)
-  const storeLoading = useApiDataStore(state => state.isLoading)
+  // ИСПРАВЛЕНИЕ: Убрали storeLoading чтобы избежать мигания
+  // const storeLoading = useApiDataStore(state => state.isLoading)
 
   const goalData = goals.find(g => g.id === goalId)
   
-  // Calculate weighted progress like GoalsPage - use safe values when goalData is undefined
-  const goalTasks = useMemo(() => allTasks.filter(t => t.goalId === goalData?.id), [allTasks, goalData?.id])
+  // Get stage IDs for this goal to include tasks with null goalId but matching stage
+  const goalStageIds = useMemo(() => 
+    stages.filter(s => s.goalId === goalData?.id).map(s => s.id),
+    [stages, goalData?.id]
+  )
+  
+  // Calculate weighted progress - include tasks with goalId OR belonging to goal's stages
+  const goalTasks = useMemo(() => allTasks.filter(t => 
+    t.goalId === goalData?.id || (t.stageId && goalStageIds.includes(t.stageId))
+  ), [allTasks, goalData?.id, goalStageIds])
   // Filter tasks without stageId for standalone display
   const standaloneTasks = useMemo(() => goalTasks.filter(t => !t.stageId), [goalTasks])
   const totalWeight = useMemo(() => goalTasks.reduce((sum, t) => sum + (t.weight || 1), 0), [goalTasks])
-  const completedWeight = useMemo(() => 
+  const completedWeight = useMemo(() =>
     goalTasks.filter(t => t.completed).reduce((sum, t) => sum + (t.weight || 1), 0),
     [goalTasks]
   )
-  const progress = useMemo(() => totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0, [completedWeight, totalWeight])
+  const taskProgress = useMemo(() => totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0, [completedWeight, totalWeight])
   const completedTasks = useMemo(() => goalTasks.filter(t => t.completed).length, [goalTasks])
   const totalTasks = goalTasks.length
   const category = useMemo(() => categories?.find(c => c.id === goalData?.categoryId), [categories, goalData?.categoryId])
@@ -163,9 +226,25 @@ export function GoalDetailPage() {
   
   // Debug tasks loading
   useEffect(() => {
-    console.log('GoalDetailPage - allTasks count:', allTasks.length)
-    console.log('GoalDetailPage - goal.id:', goalData?.id)
-  }, [allTasks.length, goalData?.id])
+    if (goalData?.id) {
+      const directGoalTasks = allTasks.filter(t => t.goalId === goalData.id)
+      const stageTasks = allTasks.filter(t => t.stageId && goalStageIds.includes(t.stageId))
+      console.log('GoalDetailPage Debug:', {
+        goalId: goalData.id,
+        goalStageIds,
+        directGoalTasks: directGoalTasks.length,
+        stageTasks: stageTasks.length,
+        totalCalculated: goalTasks.length,
+        taskDetails: goalTasks.map(t => ({ 
+          id: t.id, 
+          name: t.name, 
+          goalId: t.goalId, 
+          stageId: t.stageId,
+          source: t.goalId === goalData.id ? 'direct' : 'via_stage'
+        }))
+      })
+    }
+  }, [allTasks, goalData?.id, goalStageIds, goalTasks])
   
   // Navigate away if no goalId
   useEffect(() => {
@@ -175,14 +254,24 @@ export function GoalDetailPage() {
   }, [goalId, navigate])
   
   const currentMetricValue = useMemo(() => {
-    if (!goalMetrics || goalMetrics.length === 0) return 0
-    return goalMetrics.reduce((total, metric) => {
-      const entries = metricEntries.filter(e => e.metricId === metric.id)
-      if (entries.length === 0) return total
-      const latestEntry = entries[0]
-      return total + (latestEntry.finalValue || metric.startValue || 0)
-    }, 0)
-  }, [goalMetrics, metricEntries])
+    const progressMetric = goalMetrics.find(m => m.id === goalData?.progressMetricId)
+    if (!progressMetric) return 0
+    const entries = metricEntries.filter(e => e.metricId === progressMetric.id)
+    if (entries.length === 0) return 0
+    const isHabitWithPeriodicity = (progressMetric.type === 'habit' || progressMetric.type === 'simple_habit') && progressMetric.autoResetEnabled && progressMetric.resetPeriodicity
+    if (isHabitWithPeriodicity) {
+      const periodEntries = getEntriesForCurrentPeriod(
+        entries,
+        progressMetric.resetPeriodicity,
+        progressMetric.resetCustomDays,
+        progressMetric.resetWeekdays
+      )
+      const periodSum = periodEntries.reduce((sum, e) => sum + e.value, 0)
+      return (progressMetric.initialValue || 0) + periodSum
+    }
+    const entriesSum = entries.reduce((sum, e) => sum + (e.isAddition !== false ? e.value : -e.value), 0)
+    return (progressMetric.initialValue || 0) + entriesSum
+  }, [goalMetrics, goalData?.progressMetricId, metricEntries])
   // Calculate target metric value if goal uses metric for progress
   const targetMetricValue = useMemo(() => {
     if (goalData?.progressCalculation === 'by_metric' && goalData?.progressMetricId) {
@@ -191,6 +280,20 @@ export function GoalDetailPage() {
     }
     return 0
   }, [goalData, goalMetrics])
+
+  // Calculate overall progress based on goal's progress calculation method
+  const progress = useMemo(() => {
+    if (goalData?.progressCalculation === 'by_metric' && goalData?.progressMetricId) {
+      // Calculate progress by metric
+      const metric = goalMetrics.find(m => m.id === goalData.progressMetricId)
+      if (metric && targetMetricValue > 0) {
+        return Math.min(100, Math.round((currentMetricValue / targetMetricValue) * 100))
+      }
+      return 0
+    }
+    // Calculate progress by tasks
+    return taskProgress
+  }, [goalData, goalMetrics, targetMetricValue, currentMetricValue, taskProgress])
 
   // Prepare Gantt chart data - safe version that works even without goalData
   const ganttData = useMemo(() => {
@@ -215,7 +318,7 @@ export function GoalDetailPage() {
     // Add goal timeline
     if (goalData.startDate) {
       const startTime = toTimestamp(goalData.startDate)
-      const endTime = toTimestamp(goalData.dueDate)
+      const endTime = toTimestamp(goalData.deadlineValue instanceof Date ? goalData.deadlineValue : undefined)
       data.push({
         id: goalData.id,
         name: goalData.name,
@@ -283,14 +386,22 @@ export function GoalDetailPage() {
     return { data: valid, minStart, maxEnd }
   }, [ganttData])
 
+  // Calculate effective status based on goal state (BEFORE conditional returns)
+  const effectiveStatus = useMemo(() => {
+    if (!goalData) return 'in_progress'
+    return calculateGoalStatusFromGoal({ ...goalData, progress })
+  }, [goalData, progress])
+
   // Conditional returns after ALL hooks
-  if (storeLoading) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-500">Loading...</p>
-      </div>
-    )
-  }
+  // ИСПРАВЛЕНИЕ: Убрали проверку storeLoading чтобы не было мигания
+  // при CRUD операциях (updateTask, createMetricEntry и т.д.)
+  // if (storeLoading) {
+  //   return (
+  //     <div className="text-center py-12">
+  //       <p className="text-gray-500">Loading...</p>
+  //     </div>
+  //   )
+  // }
 
   if (error) {
     return (
@@ -322,15 +433,20 @@ export function GoalDetailPage() {
 
   const goal = goalData
 
-  // Helper function for deadline display based on dueType
+  // Helper function for deadline display
   const getDeadlineDisplay = () => {
-    switch (goal.dueType) {
-      case 'specific_date':
-        return goal.dueDate ? formatDate(goal.dueDate) : 'Не установлен'
+    switch (goal.deadlineType) {
+      case 'specific_date': {
+        // Handle both Date objects and ISO strings from API
+        const date = goal.deadlineValue instanceof Date 
+          ? goal.deadlineValue 
+          : typeof goal.deadlineValue === 'string' ? new Date(goal.deadlineValue) : null
+        return date && !isNaN(date.getTime()) ? formatDate(date) : 'Не установлен'
+      }
       case 'month_year':
-        return goal.dueMonthYear || 'Не установлен'
+        return typeof goal.deadlineValue === 'string' ? goal.deadlineValue : 'Не установлен'
       case 'year':
-        return goal.dueYear ? String(goal.dueYear) : 'Не установлен'
+        return goal.deadlineValue ? String(goal.deadlineValue) : 'Не установлен'
       case 'none':
       default:
         return 'Не установлен'
@@ -415,7 +531,7 @@ export function GoalDetailPage() {
           <div>
             <p className="text-sm text-gray-500">Статус</p>
             <div className="mt-1">
-              <StatusBadge status={goal.status} />
+              <StatusBadge status={effectiveStatus} />
             </div>
           </div>
           <div>
@@ -610,27 +726,49 @@ export function GoalDetailPage() {
             </button>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
-            {goalMetrics.map((metric) => (
-              <button
-                key={metric.id}
-                onClick={() => {
-                  setSelectedMetric(metric)
-                  setShowMetricAnalytics(true)
-                }}
-                className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-left transition-colors hover:shadow-sm hover:bg-gray-100"
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: metric.color }}
-                  />
-                  <span className="font-medium text-gray-900">{metric.name}</span>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Цель: {metric.targetValue} {metric.unitId || ''}
-                </p>
-              </button>
-            ))}
+            {goalMetrics.map((metric) => {
+              const entries = metricEntries.filter(e => e.metricId === metric.id)
+              const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
+              const isHabitWithPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.autoResetEnabled && metric.resetPeriodicity
+              const periodValue = isHabitWithPeriodicity
+                ? getEntriesForCurrentPeriod(entries, metric.resetPeriodicity, metric.resetCustomDays, metric.resetWeekdays)
+                    .reduce((sum, e) => sum + (e.value || 0), 0)
+                : totalValue
+              const progress = metric.targetValue > 0 ? Math.min(100, Math.round((periodValue / metric.targetValue) * 100)) : 0
+              return (
+                <button
+                  key={metric.id}
+                  onClick={() => {
+                    setSelectedMetric(metric)
+                    setShowMetricAnalytics(true)
+                  }}
+                  className="p-4 bg-white rounded-xl border border-gray-200 text-left transition-colors hover:shadow-md hover:border-gray-300"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: metric.color }}
+                    />
+                    <span className="font-medium text-gray-900">{metric.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-gray-900">
+                      {periodValue} / {metric.targetValue}
+                    </span>
+                    <span className="text-sm font-medium text-gray-600">{progress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.min(Math.max(progress, 0), 100)}%`,
+                        backgroundColor: metric.color || '#3b82f6'
+                      }}
+                    />
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -668,96 +806,13 @@ export function GoalDetailPage() {
 
           {/* Timeline Items */}
           <div className="space-y-3">
-            {validGanttData.data.map((item, index) => {
-              const progress = item.progress || 0
-              const duration = item.end - item.start
-              const elapsed = Date.now() - item.start
-              const itemProgress = Math.min(100, Math.max(0, (elapsed / duration) * 100))
-              
-              return (
-                <div key={item.id} className="group">
-                  <div className="flex items-center gap-4">
-                    {/* Item Type Icon */}
-                    <div className="flex-shrink-0 w-10 flex justify-center">
-                      {item.type === 'goal' && <Target className={`w-5 h-5 ${progress === 100 ? 'text-green-600' : 'text-blue-600'}`} />}
-                      {item.type === 'stage' && <Flag className={`w-5 h-5 ${progress === 100 ? 'text-green-600' : 'text-purple-600'}`} />}
-                      {item.type === 'task' && <CheckCircle className={`w-5 h-5 ${progress === 100 ? 'text-green-600' : 'text-amber-600'}`} />}
-                    </div>
-
-                    {/* Item Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="font-medium text-gray-900 truncate pr-2">{item.name}</h3>
-                        <div className="flex items-center gap-2 text-xs text-gray-500 flex-shrink-0">
-                          <CalendarDays className="w-3 h-3" />
-                          <span>{ Math.ceil(duration / (1000 * 60 * 60 * 24))} дней</span>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="relative">
-                        <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              item.type === 'goal' ? 'bg-blue-500' :
-                              item.type === 'stage' ? 'bg-purple-500' :
-                              progress === 100 ? 'bg-green-500' : 'bg-amber-500'
-                            }`}
-                            style={{ width: `${progress}%` }}
-                          >
-                            <div className="h-full bg-white/20 flex items-center justify-end pr-2">
-                              {progress > 10 && (
-                                <span className="text-xs font-medium text-white">
-                                  {Math.round(progress)}%
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Date Labels */}
-                        <div className="flex justify-between mt-1 text-xs text-gray-500">
-                          <span>{new Date(item.start).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
-                          <span>{new Date(item.end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status Badge */}
-                    <div className="flex-shrink-0">
-                      {progress === 100 ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                          <CheckCircle className="w-3 h-3" />
-                          Выполнено
-                        </span>
-                      ) : Date.now() > item.end ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
-                          <AlertCircle className="w-3 h-3" />
-                          Просрочено
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                          <Clock className="w-3 h-3" />
-                          В работе
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Hover Details */}
-                  <div className="mt-2 pl-14 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">
-                      <div>Начало: {new Date(item.start).toLocaleString('ru-RU')}</div>
-                      <div>Конец: {new Date(item.end).toLocaleString('ru-RU')}</div>
-                      <div>Прогресс: {Math.round(progress)}%</div>
-                      {item.type === 'task' && (
-                        <div>Статус: {progress === 100 ? 'Завершена' : 'Активна'}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+            {validGanttData.data.map((item) => (
+              <TimelineItem
+                key={item.id}
+                item={item}
+                categoryColor={item.type === 'goal' ? categories.find(c => c.id === (item as any).categoryId)?.color : undefined}
+              />
+            ))}
           </div>
   
         </div>
@@ -775,24 +830,20 @@ export function GoalDetailPage() {
             name: goal.name,
             categoryId: goal.categoryId,
             description: goal.description,
-            startDate: goal.startDate ? new Date(goal.startDate) : undefined,
-            // Map Goal type fields (dueType, dueDate, etc.) to GoalForm fields (deadlineType, deadlineValue)
-            deadlineType: goal.dueType,
-            deadlineValue: goal.dueType === 'specific_date' && goal.dueDate
-              ? new Date(goal.dueDate)
-              : goal.dueType === 'month_year'
-                ? goal.dueMonthYear
-                : goal.dueType === 'year' && goal.dueYear
-                  ? String(goal.dueYear)
-                  : undefined,
+            startDate: goal.startDate,
+            deadlineType: goal.deadlineType,
+            deadlineValue: goal.deadlineValue,
             status: goal.status,
             priority: goal.priority,
-            progressCalculation: goal.progressCalculation as 'by_tasks' | 'by_metric',
-            progressMetricId: goal.progressMetricId,
             isFrozen: goal.isFrozen,
             autoCalculateStatus: goal.autoCalculateStatus,
+            progressCalculation: goal.progressCalculation as 'by_tasks' | 'by_metric',
+            progressMetricId: goal.progressMetricId,
           }}
-          onSubmit={() => setShowEditGoal(false)}
+          onSubmit={async () => {
+            await Promise.all([fetchGoals(), fetchStages()])
+            setShowEditGoal(false)
+          }}
           onCancel={() => setShowEditGoal(false)}
         />
       </Modal>

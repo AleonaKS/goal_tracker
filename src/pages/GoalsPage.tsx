@@ -2,15 +2,16 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   Search, Filter, Plus, MoreVertical, Calendar, Target, CheckCircle, AlertCircle, 
-  Clock, ChevronDown, ChevronUp, Edit, Trash2, Star, Flag, ArrowUpDown, TrendingUp,
-  LayoutGrid, List, Bookmark, X
+  Clock, ChevronDown, ChevronUp, Edit, Trash2, Flag, ArrowUpDown, TrendingUp,
+  LayoutGrid, List, Bookmark, X, Snowflake, Activity
 } from 'lucide-react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { Modal } from '@/components/Modal'
 import { GoalForm } from '@/components/forms/GoalForm'
 import { TaskForm } from '@/components/forms/TaskForm'
 import { MetricForm } from '@/components/forms/MetricForm'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, getEntriesForCurrentPeriod } from '@/lib/utils'
+import { calculateGoalStatusFromGoal } from '@/lib/calculations'
 import type { Goal, Task, Metric, Category } from '@/types'
 
 type GoalStatus = 'planned' | 'in_progress' | 'completed' | 'overdue' | 'frozen'
@@ -23,6 +24,7 @@ export function GoalsPage() {
     goals, 
     categories, 
     tasks, 
+    stages,
     metrics,
     metricEntries,
     favoriteFilters,
@@ -36,8 +38,7 @@ export function GoalsPage() {
     updateMetric,
     deleteMetric,
     createFavoriteFilter,
-    deleteFavoriteFilter,
-    isLoading 
+    deleteFavoriteFilter 
   } = useApiDataStore()
 
   // Поиск и фильтры
@@ -54,6 +55,9 @@ export function GoalsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [expandedFilters, setExpandedFilters] = useState(false)
 
+  // FAB меню
+  const [showFabMenu, setShowFabMenu] = useState(false)
+
   // Модальные окна
   const [showGoalModal, setShowGoalModal] = useState(false)
   const [showTaskModal, setShowTaskModal] = useState(false)
@@ -64,13 +68,64 @@ export function GoalsPage() {
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null)
   const [selectedGoalId, setSelectedGoalId] = useState<string>('')
 
+  // Получить прогресс цели
+  const getGoalProgress = (goal: Goal): { percent: number; text: string } => {
+    if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
+      // Прогресс по счетчику
+      const metric = metrics.find(m => m.id === goal.progressMetricId)
+      if (metric) {
+        const entries = metricEntries.filter(e => e.metricId === metric.id)
+        const isHabitWithPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.autoResetEnabled && metric.resetPeriodicity
+        let displayValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
+        if (isHabitWithPeriodicity) {
+          const periodEntries = getEntriesForCurrentPeriod(
+            entries,
+            metric.resetPeriodicity,
+            metric.resetCustomDays,
+            metric.resetWeekdays
+          )
+          displayValue = periodEntries.reduce((sum, e) => sum + (e.value || 0), 0)
+        }
+        const percent = metric.targetValue > 0 ? Math.min(100, Math.round((displayValue / metric.targetValue) * 100)) : 0
+        return {
+          percent,
+          text: `${displayValue} из ${metric.targetValue} ${metric.unit || ''}`
+        }
+      }
+    } else {
+      // Прогресс по задачам - include tasks via stages
+      const goalStageIds = stages.filter(s => s.goalId === goal.id).map(s => s.id)
+      const goalTasks = tasks.filter(t => 
+        t.goalId === goal.id || (t.stageId && goalStageIds.includes(t.stageId))
+      )
+      const totalWeight = goalTasks.reduce((sum, t) => sum + (t.weight || 1), 0)
+      const completedWeight = goalTasks
+        .filter(t => t.completed)
+        .reduce((sum, t) => sum + (t.weight || 1), 0)
+      const percent = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0
+      const completedCount = goalTasks.filter(t => t.completed).length
+      return {
+        percent,
+        text: `${completedCount} из ${goalTasks.length} задач`
+      }
+    }
+    return { percent: goal.progress || 0, text: `${goal.progress || 0}%` }
+  }
+
+  // Получить эффективный статус цели
+  const getEffectiveStatus = (goal: Goal): GoalStatus => {
+    const progress = getGoalProgress(goal).percent
+    return calculateGoalStatusFromGoal({ ...goal, progress })
+  }
+
   // Статистика
   const stats = useMemo(() => ({
     total: goals.length,
-    in_progress: goals.filter(g => g.status === 'in_progress').length,
-    completed: goals.filter(g => g.status === 'completed').length,
-    overdue: goals.filter(g => g.status === 'overdue').length,
-    planned: goals.filter(g => g.status === 'planned').length,
+    in_progress: goals.filter(g => getEffectiveStatus(g) === 'in_progress').length,
+    completed: goals.filter(g => getEffectiveStatus(g) === 'completed').length,
+    overdue: goals.filter(g => getEffectiveStatus(g) === 'overdue').length,
+    planned: goals.filter(g => getEffectiveStatus(g) === 'planned').length,
+    frozen: goals.filter(g => getEffectiveStatus(g) === 'frozen').length,
   }), [goals])
 
   // Фильтрация и сортировка целей
@@ -78,7 +133,7 @@ export function GoalsPage() {
     let result = goals.filter(goal => {
       const matchesSearch = !searchQuery || goal.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = !selectedCategory || goal.categoryId === selectedCategory
-      const matchesStatus = !selectedStatus || goal.status === selectedStatus
+      const matchesStatus = !selectedStatus || getEffectiveStatus(goal) === selectedStatus
       const matchesPriority = !selectedPriority || goal.priority === selectedPriority
       return matchesSearch && matchesCategory && matchesStatus && matchesPriority
     })
@@ -94,9 +149,13 @@ export function GoalsPage() {
           comparison = (b.priority || 0) - (a.priority || 0)
           break
         case 'deadline':
-          const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
-          const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
-          comparison = aDate - bDate
+          const getDeadlineTime = (goal: Goal) => {
+            if (goal.deadlineType === 'specific_date' && goal.deadlineValue) {
+              return new Date(goal.deadlineValue).getTime()
+            }
+            return Infinity
+          }
+          comparison = getDeadlineTime(a) - getDeadlineTime(b)
           break
         case 'progress':
           comparison = (b.progress || 0) - (a.progress || 0)
@@ -111,37 +170,6 @@ export function GoalsPage() {
     return result
   }, [goals, searchQuery, selectedCategory, selectedStatus, selectedPriority, sortField, sortOrder])
 
-  // Получить прогресс цели
-  const getGoalProgress = (goal: Goal): { percent: number; text: string } => {
-    if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
-      // Прогресс по счетчику
-      const metric = metrics.find(m => m.id === goal.progressMetricId)
-      if (metric) {
-        const entries = metricEntries.filter(e => e.metricId === metric.id)
-        const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
-        const percent = metric.targetValue > 0 ? Math.round((totalValue / metric.targetValue) * 100) : 0
-        return {
-          percent,
-          text: `${totalValue} из ${metric.targetValue} ${metric.customUnit || ''}`
-        }
-      }
-    } else {
-      // Прогресс по задачам
-      const goalTasks = tasks.filter(t => t.goalId === goal.id)
-      const totalWeight = goalTasks.reduce((sum, t) => sum + (t.weight || 1), 0)
-      const completedWeight = goalTasks
-        .filter(t => t.completed)
-        .reduce((sum, t) => sum + (t.weight || 1), 0)
-      const percent = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0
-      const completedCount = goalTasks.filter(t => t.completed).length
-      return {
-        percent,
-        text: `${completedCount} из ${goalTasks.length} задач`
-      }
-    }
-    return { percent: goal.progress || 0, text: `${goal.progress || 0}%` }
-  }
-
   // Получить категорию
   const getCategory = (categoryId?: string): Category | undefined => {
     return categories.find(c => c.id === categoryId)
@@ -154,6 +182,7 @@ export function GoalsPage() {
       case 'completed': return 'bg-green-100 text-green-700'
       case 'overdue': return 'bg-red-100 text-red-700'
       case 'planned': return 'bg-gray-100 text-gray-700'
+      case 'frozen': return 'bg-cyan-100 text-cyan-700'
       default: return 'bg-gray-100 text-gray-700'
     }
   }
@@ -165,7 +194,18 @@ export function GoalsPage() {
       case 'completed': return CheckCircle
       case 'overdue': return AlertCircle
       case 'planned': return Calendar
+      case 'frozen': return Snowflake
       default: return Target
+    }
+  }
+
+  // Цвет флажка приоритета
+  const getPriorityColor = (priority: number): string => {
+    switch (priority) {
+      case 1: return 'text-blue-500'
+      case 2: return 'text-yellow-500'
+      case 3: return 'text-red-500'
+      default: return 'text-gray-300'
     }
   }
 
@@ -228,31 +268,66 @@ export function GoalsPage() {
     setSelectedPriority('')
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
+  const handleSaveCustomFilter = async () => {
+    const filterName = prompt('Введите название для пользовательского фильтра:')
+    if (!filterName) return
+
+    const currentFilters = {
+      searchQuery,
+      categoryId: selectedCategory,
+      status: selectedStatus,
+      priority: selectedPriority,
+      sortField,
+      sortOrder
+    }
+
+    // Only save non-empty filters
+    const filterValue = Object.fromEntries(
+      Object.entries(currentFilters).filter(([_, value]) => value !== '' && value !== undefined)
     )
+
+    if (Object.keys(filterValue).length === 0) {
+      alert('Нет активных фильтров для сохранения')
+      return
+    }
+
+    await createFavoriteFilter({
+      name: filterName,
+      filterType: 'goals',
+      filterValue,
+      sortBy: sortField,
+      sortOrder
+    })
   }
+
+  const handleApplyCustomFilter = (filter: any) => {
+    const filters = filter.filterValue as Record<string, string>
+    
+    // Apply all saved filters
+    if (filters.searchQuery) setSearchQuery(filters.searchQuery)
+    if (filters.categoryId) setSelectedCategory(filters.categoryId)
+    if (filters.status) setSelectedStatus(filters.status as GoalStatus)
+    if (filters.priority) setSelectedPriority(filters.priority ? Number(filters.priority) : '')
+    if (filters.sortField) setSortField(filters.sortField as GoalSortField)
+    if (filters.sortOrder) setSortOrder(filters.sortOrder as SortOrder)
+  }
+
+  // ИСПРАВЛЕНИЕ: Убрали проверку isLoading чтобы не было мигания
+  // при CRUD операциях (createGoal, updateGoal и т.д.)
+  // if (isLoading) {
+  //   return (
+  //     <div className="flex items-center justify-center h-64">
+  //       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+  //     </div>
+  //   )
+  // }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Цели</h1>
-          <button
-            onClick={handleCreateGoal}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Новая цель
-          </button>
-        </div>
-
         {/* Статистика */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 text-center">
             <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
             <div className="text-sm text-gray-500">Всего</div>
@@ -268,6 +343,10 @@ export function GoalsPage() {
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 text-center">
             <div className="text-2xl font-bold text-red-600">{stats.overdue}</div>
             <div className="text-sm text-gray-500">Просрочено</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 text-center">
+            <div className="text-2xl font-bold text-cyan-600">{stats.frozen}</div>
+            <div className="text-sm text-gray-500">Заморожено</div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 text-center">
             <div className="text-2xl font-bold text-gray-600">{stats.planned}</div>
@@ -376,6 +455,18 @@ export function GoalsPage() {
                 </button>
               </div>
 
+              {/* Сохранить фильтр */}
+              {hasActiveFilters && (
+                <button
+                  onClick={handleSaveCustomFilter}
+                  className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center gap-1"
+                  title="Сохранить текущий фильтр"
+                >
+                  <Bookmark className="w-4 h-4" />
+                  Сохранить
+                </button>
+              )}
+
               {/* Очистить фильтры */}
               {hasActiveFilters && (
                 <button
@@ -388,24 +479,34 @@ export function GoalsPage() {
             </div>
           </div>
 
-          {/* Избранные фильтры */}
+          {/* Пользовательские фильтры */}
           {favoriteFilters.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200">
-              <span className="text-sm text-gray-500 py-1">Избранное:</span>
+              <span className="text-sm text-gray-500 py-1">Мои фильтры:</span>
               {favoriteFilters.map(filter => (
-                <button
+                <div
                   key={filter.id}
-                  onClick={() => {
-                    // Применить сохраненный фильтр
-                    const filters = filter.filterValue as Record<string, string>
-                    if (filters.categoryId) setSelectedCategory(filters.categoryId)
-                    if (filters.status) setSelectedStatus(filters.status as GoalStatus)
-                  }}
-                  className="flex items-center gap-1 px-3 py-1 bg-yellow-50 text-yellow-700 rounded-lg text-sm hover:bg-yellow-100 transition-colors"
+                  className="flex items-center gap-1 px-3 py-1 bg-yellow-50 text-yellow-700 rounded-lg text-sm hover:bg-yellow-100 transition-colors group"
                 >
-                  <Bookmark className="w-3 h-3" />
-                  {filter.name}
-                </button>
+                  <button
+                    onClick={() => handleApplyCustomFilter(filter)}
+                    className="flex items-center gap-1 flex-1"
+                  >
+                    <Bookmark className="w-3 h-3" />
+                    {filter.name}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Удалить фильтр "${filter.name}"?`)) {
+                        deleteFavoriteFilter(filter.id)
+                      }
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-yellow-200 rounded"
+                    title="Удалить фильтр"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -434,13 +535,14 @@ export function GoalsPage() {
           <div className={cn(
             "grid gap-4",
             viewMode === 'grid' 
-              ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" 
+              ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" 
               : "grid-cols-1"
           )}>
             {filteredGoals.map(goal => {
               const category = getCategory(goal.categoryId)
               const progress = getGoalProgress(goal)
-              const StatusIcon = getStatusIcon(goal.status)
+              const effectiveStatus = getEffectiveStatus(goal)
+              const StatusIcon = getStatusIcon(effectiveStatus)
 
               return (
                 <div
@@ -476,14 +578,16 @@ export function GoalsPage() {
                         )}
                         <div className={cn(
                           "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium",
-                          getStatusColor(goal.status)
+                          getStatusColor(effectiveStatus)
                         )}>
                           <StatusIcon className="w-3 h-3" />
-                          {goal.status === 'in_progress' && 'В процессе'}
-                          {goal.status === 'completed' && 'Завершено'}
-                          {goal.status === 'overdue' && 'Просрочено'}
-                          {goal.status === 'planned' && 'Запланировано'}
+                          {effectiveStatus === 'in_progress' && 'В процессе'}
+                          {effectiveStatus === 'completed' && 'Завершено'}
+                          {effectiveStatus === 'overdue' && 'Просрочено'}
+                          {effectiveStatus === 'planned' && 'Запланировано'}
+                          {effectiveStatus === 'frozen' && 'Заморожено'}
                         </div>
+                        <Flag className={cn("w-4 h-4", getPriorityColor(goal.priority))} />
                       </div>
                       
                       {/* Действия */}
@@ -508,37 +612,52 @@ export function GoalsPage() {
 
                     {/* Название и описание */}
                     <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">{goal.name}</h3>
-                    {goal.description && (
-                      <p className="text-sm text-gray-500 mb-3 line-clamp-2">{goal.description}</p>
-                    )}
-
-                    {/* Дата дедлайна */}
-                    <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
-                      {goal.dueDate && (
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(goal.dueDate)}</span>
-                        </div>
+                    <div className="min-h-[2.5rem] mb-3">
+                      {goal.description ? (
+                        <p className="text-sm text-gray-500 line-clamp-2">{goal.description}</p>
+                      ) : (
+                        <p className="text-sm text-transparent select-none">&nbsp;</p>
                       )}
-                      <div className="flex items-center gap-1">
-                        <Flag className="w-4 h-4" />
-                        <span>Приоритет: {goal.priority}</span>
-                      </div>
                     </div>
 
                     {/* Прогресс */}
-                    <div className="mb-4">
+                    <div className="mb-2">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-gray-700">Прогресс</span>
                         <span className="text-sm font-bold text-gray-900">{progress.percent}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                        <div 
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${progress.percent}%` }}
+                        <div
+                          className="h-2 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${Math.min(Math.max(progress.percent, 0), 100)}%`,
+                            backgroundColor: category?.color || '#3b82f6'
+                          }}
                         />
                       </div>
                       <p className="text-xs text-gray-500">{progress.text}</p>
+                    </div>
+
+                    {/* Дата дедлайна — справа внизу */}
+                    <div className="flex items-center justify-end gap-3 text-sm text-gray-400 mb-4">
+                      {goal.deadlineType === 'specific_date' && goal.deadlineValue && (
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{formatDate(goal.deadlineValue)}</span>
+                        </div>
+                      )}
+                      {goal.deadlineType === 'month_year' && goal.deadlineValue && (
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{String(goal.deadlineValue)}</span>
+                        </div>
+                      )}
+                      {goal.deadlineType === 'year' && goal.deadlineValue && (
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{String(goal.deadlineValue)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Быстрые действия */}
@@ -627,6 +746,55 @@ export function GoalsPage() {
           }}
         />
       </Modal>
+
+      {/* FAB + Menu */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-50">
+        {showFabMenu && (
+          <>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedGoal(null)
+                setShowGoalModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <Target className="w-5 h-5 text-blue-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить цель</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedGoalId('')
+                setSelectedTask(null)
+                setShowTaskModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <CheckCircle className="w-5 h-5 text-purple-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить задачу</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedGoalId('')
+                setSelectedMetric(null)
+                setShowMetricModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <Activity className="w-5 h-5 text-green-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить метрику</span>
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => setShowFabMenu(!showFabMenu)}
+          className="w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center justify-center"
+        >
+          {showFabMenu ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+        </button>
+      </div>
     </div>
   )
 }

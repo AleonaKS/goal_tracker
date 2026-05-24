@@ -22,6 +22,7 @@ interface AuthState {
   logout: () => Promise<void>
   register: (login: string, email: string, password: string) => Promise<void>
   updateProfile: (updates: Partial<User>) => Promise<void>
+  refreshUser: () => Promise<void>
   clearError: () => void
 }
 
@@ -37,12 +38,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     
     try {
       // Get current user
-      const user = await getCurrentUser()
+      const currentUser = await getCurrentUser()
       
-      if (user) {
-        console.log('Auth initialize: Found user:', user.email)
+      if (currentUser) {
+        console.log('Auth initialize: Found user:', currentUser.email)
+        // Load fresh user data with actual totalPoints
+        const freshUserData = await getUserProfile(currentUser.id)
+        console.log('Auth initialize: Fresh user data loaded:', freshUserData?.totalPoints)
+        
         set({ 
-          user: user as User,
+          user: freshUserData || currentUser as User,
           token: 'demo-token', // In real app, this would come from session
           isInitialized: true 
         })
@@ -52,11 +57,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       // Listen for auth changes
-      onAuthStateChange((user) => {
-        set({ 
-          user: user as User,
-          token: user ? 'demo-token' : null
-        })
+      onAuthStateChange(async (user) => {
+        console.log('Auth onAuthStateChange: user changed:', user?.email)
+        const currentUser = get().user
+        
+        // Избегаем избыточных перезагрузок - обновляем только если пользователь действительно изменился
+        if (user?.id !== currentUser?.id) {
+          if (user) {
+            // Load fresh user data with actual totalPoints
+            const freshUserData = await getUserProfile(user.id)
+            console.log('Auth onAuthStateChange: Fresh user data loaded:', freshUserData?.totalPoints)
+            set({ 
+              user: freshUserData || user as User,
+              token: 'demo-token'
+            })
+          } else {
+            set({ 
+              user: null,
+              token: null
+            })
+          }
+        }
       })
     } catch (error) {
       console.error('Auth initialization error:', error)
@@ -137,6 +158,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     
     try {
       // In a real app, this would update the user profile in the database
+      // For now, just update local state
       set(state => ({
         user: state.user ? { ...state.user, ...updates } : null,
         isLoading: false
@@ -144,6 +166,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       set({ 
         error: error instanceof Error ? error.message : 'Profile update failed',
+        isLoading: false 
+      })
+    }
+  },
+  
+  refreshUser: async () => {
+    if (!get().user?.id) {
+      console.log('[Auth] refreshUser - no user id found')
+      return
+    }
+    
+    console.log('[Auth] refreshUser - starting for user:', get().user?.id)
+    set({ isLoading: true, error: null })
+    
+    try {
+      const updatedUser = await getUserProfile(get().user!.id)
+      console.log('[Auth] refreshUser - getUserProfile returned:', updatedUser?.totalPoints)
+      if (updatedUser) {
+        set({ 
+          user: updatedUser,
+          isLoading: false 
+        })
+        console.log('[Auth] refreshUser - user updated successfully')
+      }
+    } catch (error) {
+      console.error('[Auth] refreshUser error:', error)
+      set({ 
+        error: error instanceof Error ? error.message : 'Failed to refresh user',
         isLoading: false 
       })
     }

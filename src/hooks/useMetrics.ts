@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
-import { calculateProgress, calculateStreak, calculateMaxStreak, getMetricTotalValue, getMetricRecordDay } from '@/lib/utils'
+import { calculateMetricProgress, calculateStreak, calculateMaxStreak, getMetricRecordDay } from '@/lib/utils'
 import type { Metric, MetricEntry, Periodicity } from '@/types'
 
 export interface MetricWithStats extends Metric {
   totalValue: number
+  periodValue: number
   progress: number
+  isPeriodBased: boolean
   currentStreak: number
   maxStreak: number
   maxStreakDates: string
@@ -18,19 +20,21 @@ export function useMetrics() {
   const { metrics, metricEntries } = useApiDataStore()
 
   const metricsWithStats = useMemo(() => {
+    console.log('[useMetrics] Processing', metrics.length, 'metrics:')
+    metrics.forEach(m => console.log(`  - ${m.name}: type="${m.type}"`))
+    
     return metrics.map((metric): MetricWithStats => {
       const entries = metricEntries.filter(e => e.metricId === metric.id)
-      const totalValue = getMetricTotalValue(entries)
-      const progress = calculateProgress(totalValue, metric.targetValue)
-      
-      const streakEntries = entries.map(e => ({ 
-        timestamp: e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate), 
-        value: e.value 
+      const values = calculateMetricProgress(metric, entries)
+
+      const streakEntries = entries.map(e => ({
+        entryDate: e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate),
+        value: e.value
       }))
       const currentStreak = calculateStreak(streakEntries)
       const maxStreakData = calculateMaxStreak(streakEntries)
       const recordDay = getMetricRecordDay(entries)
-      
+
       const sortedEntries = [...entries].sort((a, b) => {
         const aTime = a.entryDate instanceof Date ? a.entryDate.getTime() : new Date(a.entryDate).getTime()
         const bTime = b.entryDate instanceof Date ? b.entryDate.getTime() : new Date(b.entryDate).getTime()
@@ -40,8 +44,10 @@ export function useMetrics() {
 
       return {
         ...metric,
-        totalValue,
-        progress,
+        totalValue: values.totalValue,
+        periodValue: values.periodValue,
+        progress: values.progress,
+        isPeriodBased: values.isPeriodBased,
         currentStreak,
         maxStreak: maxStreakData.value,
         maxStreakDates: maxStreakData.dates,
@@ -61,7 +67,7 @@ export function useMetrics() {
     const completedToday = metricsWithStats.filter(m => {
       const lastEntry = m.lastEntry
       if (!lastEntry) return false
-      const entryDate = new Date(lastEntry.timestamp)
+      const entryDate = new Date(lastEntry.entryDate)
       entryDate.setHours(0, 0, 0, 0)
       return entryDate.getTime() === today.getTime()
     }).length
@@ -88,10 +94,9 @@ export function useMetric(metricId: string) {
     if (!metric) return null
 
     const entries = metricEntries.filter(e => e.metricId === metricId)
-    const totalValue = getMetricTotalValue(entries)
-    const progress = calculateProgress(totalValue, metric.targetValue)
+    const values = calculateMetricProgress(metric, entries)
     
-    const streakEntries = entries.map(e => ({ timestamp: e.timestamp, value: e.value }))
+    const streakEntries = entries.map(e => ({ entryDate: e.entryDate, value: e.value }))
     const currentStreak = calculateStreak(streakEntries)
     const maxStreakData = calculateMaxStreak(streakEntries)
     const recordDay = getMetricRecordDay(entries)
@@ -99,8 +104,8 @@ export function useMetric(metricId: string) {
     return {
       metric,
       entries,
-      totalValue,
-      progress,
+      totalValue: values.totalValue,
+      progress: values.progress,
       currentStreak,
       maxStreak: maxStreakData.value,
       maxStreakDates: maxStreakData.dates,
@@ -117,6 +122,8 @@ export function getPeriodicityLabel(periodicity: Periodicity, nDays?: number, we
     yearly: 'Ежегодно',
     every_n_days: `Каждые ${nDays} дней`,
     weekdays: weekdays ? `По дням недели (${weekdays.map(d => ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d]).join(', ')})` : 'По дням недели',
+    custom: 'Пользовательский',
+    none: '',
   }
   return labels[periodicity]
 }

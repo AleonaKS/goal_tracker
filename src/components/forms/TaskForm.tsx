@@ -3,8 +3,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { taskSchema, type TaskFormData } from '@/lib/validation'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
-import type { Task } from '@/types'
+import type { Task, Goal } from '@/types'
 import React from 'react'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 // Helper to format date for date input (YYYY-MM-DD)
 const formatDateForInput = (date: Date | string | null | undefined): string => {
@@ -15,18 +17,22 @@ const formatDateForInput = (date: Date | string | null | undefined): string => {
 }
 
 interface TaskFormProps {
-  goalId: string
+  goalId?: string
   stageId?: string
   initialData?: Partial<Task>
   onSubmit: () => void
   onCancel: () => void
+  goals?: Goal[] // Optional goals list for dropdown selection
+  allowGoalSelection?: boolean // Enable goal dropdown selection
 }
 
-export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: TaskFormProps) {
-  const { stages, createTask, updateTask, error: apiError, isLoading } = useApiDataStore()
+export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel, goals, allowGoalSelection }: TaskFormProps) {
+  const { stages, createTask, updateTask, error: apiError, isLoading, goals: allGoals } = useApiDataStore()
   const { user } = useAuthStore()
 
-  const goalStages = stages.filter(s => s.goalId === goalId)
+  const [selectedGoalId, setSelectedGoalId] = React.useState<string | undefined>(goalId || initialData?.goalId)
+  const availableGoals = goals || allGoals
+  const goalStages = stages.filter(s => s.goalId === selectedGoalId)
 
   const {
     register,
@@ -39,17 +45,26 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     resolver: zodResolver(taskSchema),
     defaultValues: {
       name: initialData?.name || '',
-      goalId,
-      stageId: stageId || initialData?.stageId,
-      isPeriodBased: initialData?.isPeriodBased || false,
+      goalId: goalId || initialData?.goalId || null,
+      stageId: stageId || initialData?.stageId || null,
       priority: initialData?.priority || 3,
-      complexity: initialData?.complexity || 3,
       weight: initialData?.weight || 1,
+      startDate: initialData?.startDate ? formatDateForInput(initialData.startDate) as any : undefined,
+      dueDate: initialData?.dueDate ? formatDateForInput(initialData.dueDate) as any : undefined,
       duration: initialData?.duration,
       startTime: initialData?.startTime,
       endTime: initialData?.endTime,
     },
   })
+
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
+
+  // Update form when goal selection changes
+  React.useEffect(() => {
+    if (selectedGoalId) {
+      setValue('goalId', selectedGoalId)
+    }
+  }, [selectedGoalId, setValue])
 
   // Set date values when initialData changes - convert to YYYY-MM-DD for input
   React.useEffect(() => {
@@ -65,7 +80,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     }
   }, [initialData, setValue])
 
-  const isPeriodBased = watch('isPeriodBased')
   const duration = watch('duration')
   const startTime = watch('startTime')
 
@@ -87,17 +101,15 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
     console.log('=== FORM SUBMIT TRIGGERED ===')
     console.log('Form raw data:', data)
     console.log('dueDate type:', typeof data.dueDate, data.dueDate)
-    console.log('priority:', data.priority, 'complexity:', data.complexity, 'weight:', data.weight)
+    console.log('priority:', data.priority, 'weight:', data.weight)
     
     const taskData = {
       name: data.name,
-      goalId: data.goalId,
-      stageId: data.stageId,
+      goalId: data.goalId || null, // Convert empty string to null
+      stageId: data.stageId || null, // Convert null/undefined properly
       startDate: data.startDate,
       dueDate: data.dueDate,
-      isPeriodBased: data.isPeriodBased,
       priority: data.priority,
-      complexity: data.complexity,
       weight: data.weight,
       completed: initialData?.completed || false,
       progress: 0,
@@ -139,6 +151,7 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
   return (
     <form 
       onSubmit={handleSubmit(handleFormSubmit)} 
+      noValidate
       className="space-y-4"
       onInvalid={(e) => {
         console.log('Form validation failed:', e)
@@ -159,6 +172,31 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
         )}
       </div>
 
+      {/* Goal Selection Dropdown - shown when allowGoalSelection is true */}
+      {allowGoalSelection && availableGoals.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Цель *
+          </label>
+          <select 
+            value={selectedGoalId || ''} 
+            onChange={(e) => setSelectedGoalId(e.target.value)}
+            className="input"
+            required
+          >
+            <option value="">Выберите цель</option>
+            {availableGoals.map((goal) => (
+              <option key={goal.id} value={goal.id}>
+                {goal.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Hidden goalId field for form submission */}
+      <input type="hidden" {...register('goalId')} />
+
       {goalStages.length > 0 && !stageId && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -175,57 +213,30 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="isPeriodBased"
-          {...register('isPeriodBased')}
-          className="rounded border-gray-300"
-        />
-        <label htmlFor="isPeriodBased" className="text-sm text-gray-700">
-          Задача на период (с даты по дату)
-        </label>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Дата начала
+          </label>
+          <input
+            type="date"
+            {...register('startDate')}
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Крайний срок
+          </label>
+          <input
+            type="date"
+            {...register('dueDate')}
+            className="input"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {isPeriodBased ? (
-          <>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Дата начала
-              </label>
-              <input
-                type="date"
-                {...register('startDate')}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Дата завершения
-              </label>
-              <input
-                type="date"
-                {...register('dueDate')}
-                className="input"
-              />
-            </div>
-          </>
-        ) : (
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Крайний срок
-            </label>
-            <input
-              type="date"
-              {...register('dueDate')}
-              className="input"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Приоритет (1-5)
@@ -239,22 +250,6 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
           />
           {errors.priority && (
             <p className="mt-1 text-sm text-red-600">{errors.priority.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Сложность (1-5)
-          </label>
-          <input
-            type="number"
-            {...register('complexity', { valueAsNumber: true })}
-            className="input"
-            min={1}
-            max={5}
-          />
-          {errors.complexity && (
-            <p className="mt-1 text-sm text-red-600">{errors.complexity.message}</p>
           )}
         </div>
 
@@ -362,6 +357,8 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel }: T
           <p className="text-sm text-red-600">{apiError}</p>
         </div>
       )}
+
+      <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
 
       <div className="flex gap-3 pt-4">
         <button type="button" onClick={onCancel} className="btn-secondary flex-1">

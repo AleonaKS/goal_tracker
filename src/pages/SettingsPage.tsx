@@ -1,8 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { Download, Upload, LogOut, User, Calendar, Settings as SettingsIcon, Plus, Edit, Trash2, Trophy, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Download, Upload, LogOut, User, Calendar, Plus, Edit, Trash2, Settings as SettingsIcon, ToggleLeft, ToggleRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Modal } from '@/components/Modal'
@@ -11,31 +10,40 @@ import { UnitsManager } from '@/components/forms/UnitsManager'
 import { ConfirmModal } from '@/components/Modal'
 import { ImportModal } from '@/components/ImportModal'
 import { settingsSchema, type SettingsFormData } from '@/lib/validation'
-import { cn, formatDate } from '@/lib/utils'
 import type { Category } from '@/types'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 export function SettingsPage() {
-  const { user } = useAuthStore()
-  const { goals, categories, metrics, metricEntries, tasks, createCategory, updateCategory, deleteCategory } = useApiDataStore()
-  const { updateProfile: updateSettings, logout } = useAuthStore()
+  const { user, updateProfile: updateSettings, logout } = useAuthStore()
+  const { categories, goals, tasks, metrics, metricEntries, createCategory, updateCategory, deleteCategory, fetchCategories, fetchGoals, fetchTasks, fetchMetrics, fetchAllMetricEntries } = useApiDataStore()
+  
+  // Fetch categories on component mount
+  useEffect(() => {
+    fetchCategories()
+    fetchGoals()
+    fetchTasks()
+    fetchMetrics()
+    fetchAllMetricEntries()
+  }, [])
+  
   const [exportData, setExportData] = useState<string>('')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showUnitsManager, setShowUnitsManager] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
-  
-  // Gamification settings from DB (user.settings.gamification)
+  const [showCategories, setShowCategories] = useState(false)
+
   const gamification = useMemo(() => {
-    return user?.settings?.gamification || { enabled: true, showPoints: true, showAchievements: true }
+    return user?.settings?.gamification?.enabled ?? true
   }, [user?.settings?.gamification])
-  
-  const updateGamification = (updates: Partial<typeof gamification>) => {
-    const newSettings = { ...gamification, ...updates }
+
+  const updateGamification = (enabled: boolean) => {
     updateSettings({ 
       settings: { 
         ...user?.settings, 
-        gamification: newSettings 
+        gamification: { enabled }
       } 
     })
   }
@@ -51,6 +59,8 @@ export function SettingsPage() {
       yearHandling: user?.settings?.yearHandling || 'end',
     },
   })
+
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
 
   const handleSettingsSubmit = (data: SettingsFormData) => {
     updateSettings({ 
@@ -71,8 +81,8 @@ export function SettingsPage() {
       tasks,
       exportDate: new Date().toISOString(),
     }
-    setExportData(JSON.stringify(data, null, 2))
-    const jsonData = exportData
+    const jsonData = JSON.stringify(data, null, 2)
+    setExportData(jsonData)
     const blob = new Blob([jsonData], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -124,18 +134,18 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Настройки</h1>
 
       {/* Profile Section */}
       <div className="card">
         <div className="flex items-center gap-3 mb-4">
           <User className="w-5 h-5 text-primary-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Profile Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Информация профиля</h2>
         </div>
         
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Login</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Логин</label>
             <p className="text-gray-900">{user?.login}</p>
           </div>
           <div>
@@ -143,9 +153,9 @@ export function SettingsPage() {
             <p className="text-gray-900">{user?.email}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Registration Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Дата регистрации</label>
             <p className="text-sm text-gray-500">
-            {user?.registrationDate ? (user.registrationDate instanceof Date ? user.registrationDate.toLocaleDateString() : new Date(user.registrationDate).toLocaleDateString()) : 'N/A'}
+            {user?.createdAt ? (user.createdAt instanceof Date ? user.createdAt.toLocaleDateString() : new Date(user.createdAt).toLocaleDateString()) : 'Н/Д'}
           </p>
           </div>
         </div>
@@ -153,19 +163,19 @@ export function SettingsPage() {
 
       {/* Date Settings */}
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Date Settings</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Настройки дат</h2>
         
-        <form onSubmit={handleSubmit(handleSettingsSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(handleSettingsSubmit)} className="space-y-4" noValidate>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Month-Year Handling
+              Обработка месяца и года
             </label>
             <select {...register('monthYearHandling')} className="input">
-              <option value="start">Start of month</option>
-              <option value="end">End of month</option>
+              <option value="start">Начало месяца</option>
+              <option value="end">Конец месяца</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              How to interpret "month-year" deadlines (e.g., "2024-08")
+              Как интерпретировать сроки вида «месяц-год» (например, «2024-08»)
             </p>
             {errors.monthYearHandling && (
               <p className="mt-1 text-sm text-red-600">{errors.monthYearHandling.message}</p>
@@ -174,14 +184,14 @@ export function SettingsPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Year Handling
+              Обработка года
             </label>
             <select {...register('yearHandling')} className="input">
-              <option value="start">Start of year</option>
-              <option value="end">End of year</option>
+              <option value="start">Начало года</option>
+              <option value="end">Конец года</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              How to interpret year deadlines (e.g., "2024")
+              Как интерпретировать сроки вида «год» (например, «2024»)
             </p>
             {errors.yearHandling && (
               <p className="mt-1 text-sm text-red-600">{errors.yearHandling.message}</p>
@@ -193,195 +203,143 @@ export function SettingsPage() {
             disabled={isSubmitting}
             className="btn-primary"
           >
-            {isSubmitting ? 'Saving...' : 'Save Settings'}
+            {isSubmitting ? 'Сохранение...' : 'Сохранить настройки'}
           </button>
+          <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
         </form>
       </div>
 
       {/* Units Management */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Units of Measurement</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Единицы измерения</h2>
           <button
             onClick={() => setShowUnitsManager(true)}
             className="btn-secondary text-sm"
           >
             <SettingsIcon className="w-4 h-4 mr-1" />
-            Manage
+            Управлять
           </button>
         </div>
         <p className="text-sm text-gray-500">
-          Manage custom units for metrics and habits
+          Управление пользовательскими единицами для метрик и привычек
         </p>
       </div>
 
       {/* Categories Management */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Categories</h2>
-          <button
-            onClick={handleAddCategory}
-            className="btn-primary text-sm"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add Category
-          </button>
-        </div>
-        
-        <div className="space-y-2">
-          {categories.map((category) => (
-            <div
-              key={category.id}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-4 h-4 rounded-full"
-                  style={{ backgroundColor: category.color }}
-                />
-                <div>
-                  <p className="font-medium text-gray-900">{category.name}</p>
-                  {category.description && (
-                    <p className="text-sm text-gray-500">{category.description}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {!category.isDefault && (
-                  <>
-                    <button
-                      onClick={() => handleEditCategory(category)}
-                      className="btn-secondary text-sm p-1.5"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCategory(category)}
-                      className="btn-danger text-sm p-1.5"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Gamification Settings */}
-      <div className="card">
-        <div className="flex items-center gap-3 mb-4">
-          <Trophy className="w-6 h-6 text-yellow-500" />
-          <h2 className="text-lg font-semibold text-gray-900">Геймификация</h2>
-        </div>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-gray-900">Включить геймификацию</p>
-              <p className="text-sm text-gray-500">Очки, достижения и уровни</p>
-            </div>
+        <button
+          onClick={() => setShowCategories(!showCategories)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <h2 className="text-lg font-semibold text-gray-900">Категории</h2>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => updateGamification({ enabled: !gamification.enabled })}
-              className="text-blue-500 hover:text-blue-600"
+              onClick={(e) => { e.stopPropagation(); handleAddCategory(); }}
+              className="btn-primary text-sm"
             >
-              {gamification.enabled ? (
-                <ToggleRight className="w-10 h-6" />
-              ) : (
-                <ToggleLeft className="w-10 h-6 text-gray-400" />
-              )}
+              <Plus className="w-4 h-4 mr-1" />
+              Добавить категорию
             </button>
+            {showCategories ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
           </div>
-          
-          {gamification.enabled && (
-            <>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-900">Показывать очки</p>
-                  <p className="text-sm text-gray-500">Начисление очков за активность</p>
-                </div>
-                <button
-                  onClick={() => updateGamification({ showPoints: !gamification.showPoints })}
-                  className="text-blue-500 hover:text-blue-600"
-                >
-                  {gamification.showPoints ? (
-                    <ToggleRight className="w-10 h-6" />
-                  ) : (
-                    <ToggleLeft className="w-10 h-6 text-gray-400" />
-                  )}
-                </button>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-900">Показывать достижения</p>
-                  <p className="text-sm text-gray-500">Разблокируйте награды за прогресс</p>
-                </div>
-                <button
-                  onClick={() => updateGamification({ showAchievements: !gamification.showAchievements })}
-                  className="text-blue-500 hover:text-blue-600"
-                >
-                  {gamification.showAchievements ? (
-                    <ToggleRight className="w-10 h-6" />
-                  ) : (
-                    <ToggleLeft className="w-10 h-6 text-gray-400" />
-                  )}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Data Import/Export */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Data Management</h2>
+        </button>
         
-        <div className="space-y-3">
-          <button
-            onClick={handleExport}
-            className="btn-secondary w-full"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Export All Data
-          </button>
-          
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="btn-primary w-full"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Import Data
-          </button>
-        </div>
-        
-        {exportData && (
-          <div className="mt-4">
-            <textarea
-              value={exportData}
-              readOnly
-              className="w-full h-32 p-2 border border-gray-300 rounded-lg text-xs font-mono"
-              placeholder="Export data will appear here..."
-            />
+        {showCategories && (
+          <div className="space-y-2 mt-4">
+            {categories.map((category) => (
+              <div
+                key={category.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <div>
+                    <p className="font-medium text-gray-900">{category.name}</p>
+                    {category.description && (
+                      <p className="text-sm text-gray-500">{category.description}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleEditCategory(category)}
+                    className="btn-secondary text-sm p-1.5"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCategory(category)}
+                    className="btn-danger text-sm p-1.5"
+                    title={category.isDefault ? "Категория по умолчанию - будет удалена навсегда" : "Удалить категорию"}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Danger Zone */}
-      <div className="card border-red-200">
-        <h2 className="text-lg font-semibold text-red-900 mb-4">Danger Zone</h2>
+      {/* Gamification Settings */}
+      <div className="card">
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div>
+            <p className="font-medium text-gray-900">Включить геймификацию</p>
+            <p className="text-sm text-gray-500">Очки, достижения и уровни</p>
+          </div>
+          <button
+            onClick={() => updateGamification(!gamification)}
+            className="text-blue-500 hover:text-blue-600"
+          >
+            {gamification ? (
+              <ToggleRight className="w-10 h-6" />
+            ) : (
+              <ToggleLeft className="w-10 h-6 text-gray-400" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Data Import/Export */}
+      <div className="card space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleExport}
+            className="btn-secondary"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Экспортировать все данные
+          </button>
+          
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="btn-primary"
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Импортировать данные
+          </button>
+        </div>
         
-        <p className="text-gray-600 mb-4">
-          Sign out of your account. Your data will remain stored locally in your browser.
-        </p>
-        
+        {exportData && (
+          <textarea
+            value={exportData}
+            readOnly
+            className="w-full h-32 p-2 border border-gray-300 rounded-lg text-xs font-mono"
+            placeholder="Данные экспорта появятся здесь..."
+          />
+        )}
+
         <button
           onClick={logout}
           className="btn-danger w-full"
         >
           <LogOut className="w-4 h-4 mr-2" />
-          Sign Out
+          Выйти
         </button>
       </div>
 
@@ -395,7 +353,9 @@ export function SettingsPage() {
       <Modal
         isOpen={showCategoryModal}
         onClose={() => handleCategoryCancel()}
-        title={selectedCategory ? 'Edit Category' : 'Create Category'}
+        title={selectedCategory ? 'Редактирование категории' : 'Создание категории'}
+        size="large"
+        className="min-h-[500px]"
       >
         <CategoryForm
           initialData={selectedCategory || undefined}
@@ -413,9 +373,9 @@ export function SettingsPage() {
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDeleteCategory}
-        title="Delete Category?"
-        message={`Are you sure you want to delete "${selectedCategory?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
+        title="Удалить категорию?"
+        message={`Вы уверены, что хотите удалить "${selectedCategory?.name}"? Это действие нельзя отменить.`}
+        confirmText="Удалить"
         variant="danger"
       />
 

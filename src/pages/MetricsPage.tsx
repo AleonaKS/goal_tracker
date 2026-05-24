@@ -6,19 +6,20 @@ import {
   FlameIcon, ArrowUp, ArrowDown
 } from 'lucide-react'
 import { useApiDataStore } from '@/stores/apiDataStore'
+import useGamificationActions from '@/hooks/useGamificationActions'
 import { Modal } from '@/components/Modal'
 import { MetricForm } from '@/components/forms/MetricForm'
 import { MetricAnalyticsModal } from '@/components/MetricAnalyticsModal'
 import { QuickEntryForm } from '@/components/forms/QuickEntryForm'
 import { calculateCurrentStreak } from '@/lib/calculations'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, calculateMetricProgress } from '@/lib/utils'
 import type { Metric, MetricEntry, Category } from '@/types'
 
 type FilterType = 'all' | 'habits' | 'counters'
-type ViewMode = 'cards' | 'analytics'
 
 export function MetricsPage() {
   const navigate = useNavigate()
+  const { createMetricEntry } = useGamificationActions()
   const { 
     metrics, 
     metricEntries,
@@ -26,15 +27,15 @@ export function MetricsPage() {
     createMetric,
     updateMetric,
     deleteMetric,
-    createMetricEntry,
-    isLoading 
+    fetchPointsHistory
+    // ИСПРАВЛЕНИЕ: Убрали isLoading чтобы избежать мигания при CRUD операциях
+    // isLoading 
   } = useApiDataStore()
 
   const [filter, setFilter] = useState<FilterType>('all')
-  const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
-  
+
   // Модальные окна
   const [showMetricModal, setShowMetricModal] = useState(false)
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null)
@@ -43,11 +44,20 @@ export function MetricsPage() {
   const [quickEntryMetric, setQuickEntryMetric] = useState<Metric | null>(null)
   const [entryValue, setEntryValue] = useState('')
 
+  // Защита от двойного нажатия
+  const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({})
+
+  // Найти метрику для аналитики (кэшировать чтобы избежать бесконечного цикла)
+  const analyticsMetric = useMemo(() => 
+    analyticsMetricId ? metrics.find(m => m.id === analyticsMetricId) : null,
+    [analyticsMetricId, metrics]
+  )
+
   // Фильтрация метрик
   const filteredMetrics = useMemo(() => {
     return metrics.filter((metric) => {
       const matchesType = filter === 'all' || 
-    (filter === 'habits' && metric.type === 'habit') || 
+    (filter === 'habits' && (metric.type === 'habit' || metric.type === 'simple_habit')) || 
     (filter === 'counters' && metric.type === 'counter')
       const matchesSearch = !searchQuery || metric.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = !selectedCategory || metric.categoryId === selectedCategory
@@ -57,7 +67,7 @@ export function MetricsPage() {
 
   // Статистика
   const stats = useMemo(() => {
-    const habits = metrics.filter(m => m.type === 'habit')
+    const habits = metrics.filter(m => m.type === 'habit' || m.type === 'simple_habit')
     const counters = metrics.filter(m => m.type === 'counter')
     
     // Подсчет выполненных сегодня
@@ -88,28 +98,25 @@ export function MetricsPage() {
     }
   }, [metrics, metricEntries])
 
-  // Получить прогресс метрики
   const getMetricProgress = (metric: Metric) => {
     const entries = metricEntries.filter(e => e.metricId === metric.id)
-    
-    if (metric.type === 'habit') {
-      // Для привычек: текущая серия (по дням, а не по записям)
-      const streak = calculateCurrentStreak(entries, metric.periodicity)
-      return { 
-        current: streak, 
-        target: metric.targetValue || 30,
-        text: `${streak} дней подряд`
+    const values = calculateMetricProgress(metric, entries)
+
+    if (metric.type === 'simple_habit') {
+      return {
+        current: values.periodValue,
+        completedToday: values.periodValue > 0,
+        target: 1,
+        streak: values.periodValue,
       }
-    } else {
-      // Для счетчиков: текущее значение
-      const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
-      const progress = metric.targetValue > 0 ? Math.round((totalValue / metric.targetValue) * 100) : 0
-      return { 
-        current: totalValue, 
-        target: metric.targetValue,
-        progress,
-        text: `${totalValue} / ${metric.targetValue} ${metric.customUnit || ''}`
-      }
+    }
+
+    return {
+      current: values.isPeriodBased ? values.periodValue : values.totalValue,
+      totalValue: values.totalValue,
+      target: metric.targetValue || 1,
+      progress: values.progress,
+      text: `${values.isPeriodBased ? values.periodValue : values.totalValue} / ${metric.targetValue} ${metric.customUnit || ''}`
     }
   }
 
@@ -137,52 +144,57 @@ export function MetricsPage() {
 
   // Быстрый ввод для привычки
   const handleQuickHabitEntry = async (metric: Metric) => {
+    // Защита от двойного нажатия
+    if (isProcessing[metric.id]) {
+      return
+    }
+
+    setIsProcessing(prev => ({ ...prev, [metric.id]: true }))
+
+    const metricEntries = useApiDataStore.getState().metricEntries
+    const today = new Date().toISOString().split('T')[0]
+    const existingEntry = metricEntries.find(e => {
+      if (!e.entryDate) return false
+      const entryDate = new Date(e.entryDate)
+      return !isNaN(entryDate.getTime()) && e.metricId === metric.id && entryDate.toISOString().split('T')[0] === today
+    })
+
     try {
-      const today = new Date()
-      console.log('Creating habit entry for metric:', metric.id, metric.name)
-      await createMetricEntry({
-        metricId: metric.id,
-        value: 1,
-        finalValue: 1,
-        entryDate: today,
-        isAddition: true,
-        note: 'Быстрая отметка'
-      })
-      console.log('Habit entry created successfully')
-    } catch (err) {
-      console.error('Failed to create habit entry:', err)
-      alert('Ошибка при сохранении: ' + (err instanceof Error ? err.message : 'Неизвестная ошибка'))
+      if (existingEntry) {
+        // Удаляем существующую запись
+        await useApiDataStore.getState().deleteMetricEntry(existingEntry.id)
+      } else {
+        // Создаем новую запись
+        await createMetricEntry(metric.id, 1, 'Быстрая отметка')
+      }
+    } catch (error) {
+      console.error('Failed to handle habit entry:', error)
+      alert('Ошибка при сохранении: ' + (error instanceof Error ? error.message : 'Неизвестная ошибка'))
+    } finally {
+      setIsProcessing(prev => ({ ...prev, [metric.id]: false }))
     }
   }
 
   // Быстрый ввод для счетчика
   const handleQuickCounterEntry = async (metric: Metric, isAddition: boolean) => {
+    // Защита от двойного нажатия
+    if (isProcessing[metric.id]) {
+      return
+    }
+
+    setIsProcessing(prev => ({ ...prev, [metric.id]: true }))
+
+    const value = metric.stepValue ?? 1
+    const entryValue = isAddition ? value : -value
+
     try {
-      const value = metric.stepValue || 1
-      const today = new Date()
-      
-      // Calculate current total from existing entries
-      const entries = metricEntries.filter(e => e.metricId === metric.id)
-      const startValue = metric.startValue || 0
-      const currentTotal = entries.reduce((sum, e) => 
-        sum + (e.isAddition ? e.value : -e.value), 0
-      )
-      const previousTotal = startValue + currentTotal
-      const newTotal = isAddition ? previousTotal + value : Math.max(0, previousTotal - value)
-      
-      console.log('Creating counter entry for metric:', metric.id, 'delta:', isAddition ? value : -value, 'new total:', newTotal)
-      await createMetricEntry({
-        metricId: metric.id,
-        value: isAddition ? value : -value,
-        finalValue: newTotal,
-        entryDate: today,
-        isAddition,
-        note: 'Быстрое изменение'
-      })
-      console.log('Counter entry created successfully')
-    } catch (err) {
-      console.error('Failed to create counter entry:', err)
-      alert('Ошибка при сохранении: ' + (err instanceof Error ? err.message : 'Неизвестная ошибка'))
+      // Сохраняем на сервере, локальное обновление происходит в apiDataStore
+      await createMetricEntry(metric.id, entryValue, isAddition ? 'Быстрое добавление' : 'Быстрое вычитание')
+    } catch (error) {
+      console.error('Failed to save counter entry:', error)
+      alert('Ошибка при сохранении: ' + (error instanceof Error ? error.message : 'Неизвестная ошибка'))
+    } finally {
+      setIsProcessing(prev => ({ ...prev, [metric.id]: false }))
     }
   }
 
@@ -204,30 +216,27 @@ export function MetricsPage() {
     const data: Record<string, number> = {}
     
     entries.forEach(e => {
+      if (!e.entryDate) return
       const entryDate = e.entryDate as unknown as string | Date
-      const date = typeof entryDate === 'string' 
-        ? entryDate.split('T')[0] 
-        : new Date(entryDate).toISOString().split('T')[0]
+      let date: string
+      if (typeof entryDate === 'string') {
+        date = entryDate.split('T')[0]
+      } else {
+        const parsedDate = new Date(entryDate)
+        if (isNaN(parsedDate.getTime())) return
+        date = parsedDate.toISOString().split('T')[0]
+      }
       data[date] = (data[date] || 0) + (e.value || 0)
     })
     
     return data
   }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
+ 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      {/* Header */}
       <div className="max-w-7xl mx-auto mb-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Метрики</h1>
+          <h1 className="text-3xl font-bold text-gray-900"> </h1>
           <button
             onClick={handleCreateMetric}
             className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
@@ -308,27 +317,6 @@ export function MetricsPage() {
                 ))}
               </div>
 
-              {/* Вид */}
-              <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => setViewMode('cards')}
-                  className={cn(
-                    "p-2 transition-colors",
-                    viewMode === 'cards' ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-                  )}
-                >
-                  <Activity className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('analytics')}
-                  className={cn(
-                    "p-2 transition-colors",
-                    viewMode === 'analytics' ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-                  )}
-                >
-                  <BarChart3 className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -348,20 +336,24 @@ export function MetricsPage() {
               Создать метрику
             </button>
           </div>
-        ) : viewMode === 'cards' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(400px,1fr))] gap-4">
             {filteredMetrics.map(metric => {
               const category = getCategory(metric.categoryId)
               const progress = getMetricProgress(metric)
               const heatmapData = metric.type === 'habit' ? getHeatmapData(metric.id) : null
+              const currentStreak = calculateCurrentStreak(
+                metricEntries.filter(e => e.metricId === metric.id),
+                metric.periodicity || 'daily'
+              )
 
               return (
                 <div
                   key={metric.id}
                   onClick={() => openAnalytics(metric)}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group cursor-pointer"
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group cursor-pointer flex flex-col h-full"
                 >
-                  <div className="p-5">
+                  <div className="p-5 flex flex-col flex-1">
                     {/* Верхняя часть: категория и тип */}
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -382,14 +374,21 @@ export function MetricsPage() {
                         )}
                         <div className={cn(
                           "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium",
-                          metric.type === 'habit' 
+                          metric.type === 'simple_habit'
+                            ? "bg-green-100 text-green-700"
+                            : metric.type === 'habit'
                             ? "bg-orange-100 text-orange-700"
                             : "bg-blue-100 text-blue-700"
                         )}>
-                          {metric.type === 'habit' ? (
+                          {metric.type === 'simple_habit' ? (
+                            <>
+                              <CheckCircle className="w-3 h-3" />
+                              Простая привычка
+                            </>
+                          ) : metric.type === 'habit' ? (
                             <>
                               <Flame className="w-3 h-3" />
-                              Привычка
+                              Сложная привычка
                             </>
                           ) : (
                             <>
@@ -431,42 +430,128 @@ export function MetricsPage() {
 
                     {/* Прогресс */}
                     <div className="mb-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">
-                          {metric.type === 'habit' ? 'Текущая серия' : 'Текущее значение'}
-                        </span>
-                        <span className="text-sm font-bold text-gray-900">
-                          {metric.type === 'habit' 
-                            ? `${progress.current} дней`
-                            : `${(progress as any).current} / ${(progress as any).target}`
-                          }
-                        </span>
-                      </div>
-                      {metric.type === 'counter' && (
-                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                          <div 
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${(progress as any).progress}%` }}
-                          />
+                      {metric.type === 'simple_habit' ? (
+                        // Simple habit - week dots visualization
+                        <div>
+                          <div className="flex items-center justify-center gap-1.5 mb-2">
+                            {(() => {
+                              const dots: React.ReactNode[] = []
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const toLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  for (let i = 9; i >= 0; i--) {
+                    const day = new Date(today)
+                    day.setDate(today.getDate() - i)
+                    const dayStr = toLocalDate(day)
+                    const hasEntry = metricEntries.some(e => {
+                      if (e.metricId !== metric.id) return false
+                      const d = e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate)
+                      return toLocalDate(d) === dayStr
+                    })
+                                const isToday = i === 0
+                                dots.push(
+                                  <div
+                                    key={i}
+                                    className={cn(
+                                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all',
+                                      hasEntry
+                                        ? 'bg-green-500 text-white border-green-500'
+                                        : 'bg-white text-gray-400 border-gray-300',
+                                      isToday && !hasEntry && 'ring-2 ring-offset-1 ring-green-500',
+                                      isToday && hasEntry && 'ring-2 ring-offset-1 ring-green-500'
+                                    )}
+                                    title={day.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}
+                                  >
+                                    {day.getDate()}
+                                  </div>
+                                )
+                              }
+                              return dots
+                            })()}
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">
+                              {(progress as any).current > 0
+                                ? `🔥 Серия ${(progress as any).current} дн`
+                                : 'Нет активности'}
+                            </span>
+                            <span className="text-gray-400">
+                              Всего: {metricEntries.filter(e => e.metricId === metric.id).length} дн
+                            </span>
+                          </div>
                         </div>
+                      ) : (
+                        // Habit and counter - progress bar display
+                        <>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-bold text-gray-900">
+                              {(progress as any).current} / {(progress as any).target} {metric.customUnit || ''}
+                            </span>
+                            <span className="text-sm font-medium text-gray-600">
+                              {(progress as any).progress ?? Math.round(((progress as any).current / (progress as any).target) * 100)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="h-2 rounded-full transition-all duration-300"
+                              style={{ 
+                                width: `${Math.min(Math.max(((progress as any).current / (progress as any).target) * 100, 0), 100)}%`,
+                                backgroundColor: category?.color || metric.color || '#3b82f6'
+                              }}
+                            />
+                          </div>
+                        </>
                       )}
-                      <p className="text-xs text-gray-500">{progress.text}</p>
                     </div>
-
-
+              
                     {/* Быстрые действия */}
-                    <div className="flex gap-2 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                      {metric.type === 'habit' ? (
+                    <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto" onClick={(e) => e.stopPropagation()}>
+                      {metric.type === 'simple_habit' ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             handleQuickHabitEntry(metric)
                           }}
-                          className="flex-1 px-3 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium flex items-center justify-center gap-1"
+                          disabled={isProcessing[metric.id]}
+                          className="flex-1 px-3 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <CheckCircle className="w-4 h-4" />
-                          Отметить
+                          {progress.current > 0 ? 'Отменить' : 'Выполнить'}
                         </button>
+                      ) : metric.type === 'habit' ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleQuickCounterEntry(metric, false)
+                            }}
+                            disabled={isProcessing[metric.id]}
+                            className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openQuickEntry(metric)
+                            }}
+                            disabled={isProcessing[metric.id]}
+                            className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                            Запись
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleQuickCounterEntry(metric, true)
+                            }}
+                            disabled={isProcessing[metric.id]}
+                            className="px-3 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </>
                       ) : (
                         <>
                           <button
@@ -474,131 +559,35 @@ export function MetricsPage() {
                               e.stopPropagation()
                               handleQuickCounterEntry(metric, false)
                             }}
-                            className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
+                            disabled={isProcessing[metric.id]}
+                            className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Minus className="w-4 h-4" />
                           </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (metric.inputMode === 'manual') {
-                                openQuickEntry(metric)
-                              } else {
-                                handleQuickCounterEntry(metric, true)
-                              }
+                              openQuickEntry(metric)
                             }}
-                            className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium flex items-center justify-center gap-1"
+                            disabled={isProcessing[metric.id]}
+                            className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <PlusCircle className="w-4 h-4" />
-                            {metric.inputMode === 'manual' ? 'Записать' : '+ Шаг'}
+                            Запись
                           </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
                               handleQuickCounterEntry(metric, true)
                             }}
-                            className="px-3 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
+                            disabled={isProcessing[metric.id]}
+                            className="px-3 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Plus className="w-4 h-4" />
                           </button>
                         </>
                       )}
                     </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          /* Analytics View */
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredMetrics.map(metric => {
-              const progress = getMetricProgress(metric)
-              const entries = metricEntries.filter(e => e.metricId === metric.id)
-              
-              // Prepare chart data
-              const chartData = entries.slice(0, 30).map(entry => ({
-                date: new Date(entry.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-                value: entry.value
-              }))
-
-              return (
-                <div 
-                  key={metric.id} 
-                  onClick={() => openAnalytics(metric)}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 cursor-pointer hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{metric.name}</h3>
-                      <p className="text-sm text-gray-500">{metric.type === 'habit' ? 'Привычка' : 'Счётчик'}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold text-gray-900">
-                        {metric.type === 'habit' ? `${progress.current} дней` : `${(progress as any).progress}%`}
-                      </div>
-                      <p className="text-xs text-gray-500">{progress.text}</p>
-                    </div>
-                  </div>
-
-                  {/* Simple Bar Chart */}
-                  {chartData.length > 0 ? (
-                    <div className="h-48">
-                      <div className="flex items-end gap-1 h-full">
-                        {chartData.map((item, i) => {
-                          const maxValue = Math.max(...chartData.map(d => d.value))
-                          const height = maxValue > 0 ? (item.value / maxValue) * 100 : 0
-                          return (
-                            <div
-                              key={i}
-                              className="flex-1 flex flex-col items-center gap-1"
-                            >
-                              <div 
-                                className="w-full bg-blue-500 rounded-t transition-all duration-300 hover:bg-blue-600"
-                                style={{ height: `${Math.max(height, 5)}%` }}
-                                title={`${item.date}: ${item.value}`}
-                              />
-                              <span className="text-xs text-gray-400 rotate-45 origin-bottom-left">
-                                {i % 5 === 0 ? item.date : ''}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="h-48 flex items-center justify-center text-gray-400">
-                      <p>Нет данных для отображения</p>
-                    </div>
-                  )}
-
-                  {/* Quick Actions */}
-                  <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
-                    {metric.type === 'habit' ? (
-                      <button
-                        onClick={() => handleQuickHabitEntry(metric)}
-                        className="flex-1 px-3 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors text-sm font-medium flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        Отметить
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleQuickCounterEntry(metric, false)}
-                          className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleQuickCounterEntry(metric, true)}
-                          className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium flex items-center justify-center gap-1"
-                        >
-                          <PlusCircle className="w-4 h-4" />
-                          + Шаг
-                        </button>
-                      </>
-                    )}
                   </div>
                 </div>
               )
@@ -629,43 +618,85 @@ export function MetricsPage() {
 
       {/* Модальное окно быстрого ввода */}
       {/* Metric Analytics Modal */}
-      {showAnalyticsModal && analyticsMetricId && (
+      {showAnalyticsModal && analyticsMetric && (
         <MetricAnalyticsModal
           isOpen={showAnalyticsModal}
           onClose={() => {
             setShowAnalyticsModal(false)
             setAnalyticsMetricId(null)
           }}
-          metric={metrics.find(m => m.id === analyticsMetricId)!}
+          metric={analyticsMetric}
         />
       )}
 
       {/* Улучшенное модальное окно быстрого ввода */}
       {quickEntryMetric && (
         <QuickEntryForm
+          metric={quickEntryMetric}
+          entries={metricEntries.filter(e => e.metricId === quickEntryMetric.id)}
           isOpen={!!quickEntryMetric}
           onClose={() => {
             setQuickEntryMetric(null)
             setEntryValue('')
           }}
-          metric={quickEntryMetric}
-          entries={metricEntries.filter(e => e.metricId === quickEntryMetric.id)}
           onSave={async (data) => {
+            const metricFromStore = useApiDataStore.getState().metrics.find(m => m.id === quickEntryMetric.id)
             try {
-              console.log('QuickEntryForm onSave called with:', data)
-              await createMetricEntry({
-                metricId: quickEntryMetric.id,
-                value: data.value,
-                finalValue: data.finalValue,
-                note: data.note,
-                entryDate: data.entryDate,
-                isAddition: data.isAddition
-              })
-              console.log('Entry saved successfully via QuickEntryForm')
+              const signedValue = data.isAddition
+                ? Math.abs(data.value)
+                : -Math.abs(data.value)
+              if (metricFromStore) {
+                const allEntries = useApiDataStore.getState().metricEntries.filter(e => e.metricId === quickEntryMetric.id)
+                const tempEntry: MetricEntry = {
+                  id: 'temp-' + Date.now(),
+                  metricId: quickEntryMetric.id,
+                  value: signedValue,
+                  finalValue: 0,
+                  isAddition: signedValue > 0,
+                  entryDate: data.entryDate,
+                  createdAt: new Date(),
+                }
+                const optimisticEntries = [...allEntries, tempEntry]
+                const optimisticValues = calculateMetricProgress(metricFromStore, optimisticEntries)
+
+                useApiDataStore.setState(state => ({
+                  metrics: state.metrics.map(m =>
+                    m.id === quickEntryMetric.id
+                      ? {
+                          ...m,
+                          totalValue: optimisticValues.totalValue,
+                          periodValue: optimisticValues.isPeriodBased ? optimisticValues.periodValue : undefined,
+                          progress: optimisticValues.progress
+                        }
+                      : m
+                  )
+                }))
+              }
+
+              console.log('[MetricsPage] Saving entry with date:', data.entryDate, 'type:', typeof data.entryDate)
+              await createMetricEntry(quickEntryMetric.id, signedValue, data.note || 'Запись', data.entryDate)
+
               setQuickEntryMetric(null)
               setEntryValue('')
             } catch (err) {
               console.error('Failed to save entry from QuickEntryForm:', err)
+              // Откатываем оптимистичное обновление при ошибке
+              if (metricFromStore) {
+                const allEntries = useApiDataStore.getState().metricEntries.filter(e => e.metricId === quickEntryMetric.id)
+                const values = calculateMetricProgress(metricFromStore, allEntries)
+                useApiDataStore.setState(state => ({
+                  metrics: state.metrics.map(m =>
+                    m.id === quickEntryMetric.id
+                      ? {
+                          ...m,
+                          totalValue: values.totalValue,
+                          periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                          progress: values.progress
+                        }
+                      : m
+                  )
+                }))
+              }
               alert('Ошибка при сохранении записи: ' + (err instanceof Error ? err.message : 'Неизвестная ошибка'))
             }
           }}
@@ -675,4 +706,3 @@ export function MetricsPage() {
     </div>
   )
 }
-

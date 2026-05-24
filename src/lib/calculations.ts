@@ -7,8 +7,8 @@ export function calculateGoalStatusFromGoal(goal: Goal): Goal['status'] {
   // If frozen, keep frozen
   if (goal.isFrozen) return 'frozen'
 
-  // If completed, keep completed
-  if (goal.completedAt || goal.status === 'completed') return 'completed'
+  // If completed (by flag or by 100% progress), mark as completed
+  if (goal.completedAt || goal.status === 'completed' || goal.progress === 100) return 'completed'
 
   const today = new Date()
   const startDate = new Date(goal.startDate)
@@ -235,9 +235,6 @@ export function calculateHeatmapData(
   return heatmap
 }
 
-/**
- * Check if metric should auto-reset based on periodicity
- */
 export function shouldResetMetric(metric: Metric): boolean {
   if (!metric.autoResetEnabled || !metric.lastResetAt) return false
 
@@ -275,9 +272,7 @@ export function shouldResetMetric(metric: Metric): boolean {
   }
 }
 
-/**
- * Calculate expected completion date based on progress rate or metric pace
- */
+
 export function calculateExpectedCompletionDate(
   goal: Goal,
   entries: MetricEntry[],

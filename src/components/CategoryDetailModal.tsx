@@ -1,11 +1,15 @@
 import { useState, useMemo } from 'react'
-import { X, ChevronDown, Table2, BarChart3 } from 'lucide-react'
+import { X, ChevronDown, ChevronLeft, ChevronRight, Table2, BarChart3 } from 'lucide-react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { CategoryAnalyticsTable } from './analytics'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { format, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import { cn } from '@/lib/utils'
 import type { Category } from '@/types'
 
 type ViewType = 'chart' | 'table'
+type NumberFormat = 'full' | 'compact'
 
 interface CategoryDetailModalProps {
   isOpen: boolean
@@ -18,6 +22,15 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(initialCategory || null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [view, setView] = useState<ViewType>('table')
+  const [numberFormat, setNumberFormat] = useState<NumberFormat>(() => {
+    return (localStorage.getItem('goaltracker_number_format') as NumberFormat) || 'full'
+  })
+  const [weekOffset, setWeekOffset] = useState<number | null>(null)
+
+  const handleNumberFormat = (format: NumberFormat) => {
+    setNumberFormat(format)
+    localStorage.setItem('goaltracker_number_format', format)
+  }
 
   const categoryMetrics = useMemo(() => {
     if (!selectedCategory) return []
@@ -32,13 +45,31 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
     return metricEntries.filter(e => categoryMetricIds.includes(e.metricId))
   }, [metricEntries, categoryMetricIds])
 
+  // Calculate week range based on offset (null = all time)
+  const weekRange = useMemo(() => {
+    if (weekOffset === null) return null
+    const base = new Date()
+    const start = startOfWeek(weekOffset >= 0 ? addWeeks(base, weekOffset) : subWeeks(base, Math.abs(weekOffset)), { locale: ru })
+    const end = endOfWeek(start, { locale: ru })
+    return { start, end }
+  }, [weekOffset])
+
+  // Filter entries by selected week
+  const filteredEntries = useMemo(() => {
+    if (!weekRange) return categoryEntries
+    return categoryEntries.filter(e => {
+      const date = e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate)
+      return date >= weekRange.start && date <= weekRange.end
+    })
+  }, [categoryEntries, weekRange])
+
   // Stacked bar chart data - by days of week
   const stackedBarData = useMemo(() => {
     const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
     const data = dayNames.map((day, index) => {
       const dayData: Record<string, number | string> = { day }
       categoryMetrics.forEach(metric => {
-        const metricEntriesForDay = categoryEntries.filter(e => {
+        const metricEntriesForDay = filteredEntries.filter(e => {
           const entryDate = e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate)
           const dayOfWeek = entryDate.getDay()
           const adjustedDay = dayOfWeek === 0 ? 6 : dayOfWeek - 1
@@ -50,7 +81,7 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
       return dayData
     })
     return data
-  }, [categoryMetrics, categoryEntries])
+  }, [categoryMetrics, filteredEntries])
 
   if (!isOpen) return null
 
@@ -119,24 +150,101 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
 
         {/* View Toggle */}
         {selectedCategory && (
-          <div className="bg-gray-100 p-1 mx-6 mt-6 rounded-lg flex w-fit">
-            {[
-              { value: 'chart', label: 'График', icon: BarChart3 },
-              { value: 'table', label: 'Таблица', icon: Table2 }
-            ].map((v) => (
+          <div className="flex items-center gap-3 mx-6 mt-6">
+            <div className="bg-gray-100 p-1 rounded-lg flex w-fit">
+              {[
+                { value: 'chart', label: 'График', icon: BarChart3 },
+                { value: 'table', label: 'Таблица', icon: Table2 }
+              ].map((v) => (
+                <button
+                  key={v.value}
+                  onClick={() => setView(v.value as ViewType)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    view === v.value
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <v.icon className="w-4 h-4" />
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            {view === 'table' && (
+              <div className="bg-gray-100 p-0.5 rounded-lg flex">
+                <button
+                  onClick={() => handleNumberFormat('full')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    numberFormat === 'full'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Полные значения"
+                >
+                  <span className="text-xs">▬</span> Значения
+                </button>
+                <button
+                  onClick={() => handleNumberFormat('compact')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    numberFormat === 'compact'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Сокращённые значения (тысячи)"
+                >
+                  <span className="text-xs">≈</span> Сократить
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Week filter */}
+        {selectedCategory && (
+          <div className="flex items-center gap-2 mx-6 mt-3">
+            <div className="bg-gray-100 p-0.5 rounded-lg flex">
               <button
-                key={v.value}
-                onClick={() => setView(v.value as ViewType)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  view === v.value
+                onClick={() => setWeekOffset(null)}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  weekOffset === null
                     ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
+                    : 'text-gray-500 hover:text-gray-700'
+                )}
               >
-                <v.icon className="w-4 h-4" />
-                {v.label}
+                Всё время
               </button>
-            ))}
+              <button
+                onClick={() => setWeekOffset(weekOffset === null ? 0 : weekOffset)}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  weekOffset !== null
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                Неделя
+              </button>
+            </div>
+            {weekOffset !== null && weekRange && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setWeekOffset(weekOffset - 1)}
+                  className="p-1 rounded hover:bg-gray-100 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-500" />
+                </button>
+                <span className="text-xs text-gray-600 font-medium min-w-[120px] text-center">
+                  {format(weekRange.start, 'd MMM', { locale: ru })} — {format(weekRange.end, 'd MMM', { locale: ru })}
+                </span>
+                <button
+                  onClick={() => setWeekOffset(weekOffset + 1)}
+                  className="p-1 rounded hover:bg-gray-100 transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -153,7 +261,13 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
                       <BarChart data={stackedBarData}>
                         <XAxis dataKey="day" />
                         <YAxis />
-                        <Tooltip />
+                        <Tooltip formatter={(value: number) => {
+                          if (numberFormat === 'compact' && value >= 1000) {
+                            const t = value / 1000
+                            return [t >= 10 ? `${Math.round(t)}т` : `${t.toFixed(1)}т`]
+                          }
+                          return [value % 1 === 0 ? String(value) : value.toFixed(2)]
+                        }} />
                         <Legend />
                         {categoryMetrics.map((metric) => (
                           <Bar
@@ -176,7 +290,8 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
                 <CategoryAnalyticsTable
                   category={selectedCategory}
                   metrics={categoryMetrics}
-                  entries={categoryEntries}
+                  entries={filteredEntries}
+                  compact={numberFormat === 'compact'}
                 />
               )}
             </>

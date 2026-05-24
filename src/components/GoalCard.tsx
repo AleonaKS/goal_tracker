@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MoreVertical, Edit, Trash2, TrendingUp } from 'lucide-react'
+import { MoreVertical, Edit, Trash2 } from 'lucide-react'
 import { ProgressBar } from './ProgressBar'
 import { StatusBadge, PriorityBadge } from './StatusBadge'
 import { Modal, ConfirmModal } from './Modal'
@@ -20,15 +20,39 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
   const [showMenu, setShowMenu] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const { deleteGoal, tasks } = useApiDataStore()
+  const { deleteGoal, tasks, stages, metrics, metricEntries } = useApiDataStore()
 
-  // Calculate progress
+  // Calculate progress - include tasks via stages or by metric
   const { progress, completedTasks, totalTasks, calculatedStatus } = useMemo(() => {
-    const goalTasks = tasks.filter(t => t.goalId === goal.id)
-    const completed = goalTasks.filter(t => t.completed).length
-    const total = goalTasks.length
-    const progress = total > 0 ? Math.round((completed / total) * 100) : 0
-    
+    let progress = 0
+    let completedTasks = 0
+    let totalTasks = 0
+
+    if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
+      // Calculate progress by metric
+      const metric = metrics.find(m => m.id === goal.progressMetricId)
+      if (metric) {
+        const entries = metricEntries.filter(e => e.metricId === metric.id)
+        const entriesSum = entries.reduce((sum, e) => sum + (e.isAddition !== false ? e.value : -e.value), 0)
+        const currentValue = (metric.initialValue || 0) + entriesSum
+        const targetValue = metric.targetValue || 100
+        progress = targetValue > 0 ? Math.round((currentValue / targetValue) * 100) : 0
+        // Cap progress at 100% for display
+        progress = Math.min(progress, 100)
+      }
+    } else {
+      // Calculate progress by tasks
+      const goalStageIds = stages.filter(s => s.goalId === goal.id).map(s => s.id)
+      const goalTasks = tasks.filter(t =>
+        t.goalId === goal.id || (t.stageId && goalStageIds.includes(t.stageId))
+      )
+      completedTasks = goalTasks.filter(t => t.completed).length
+      totalTasks = goalTasks.length
+      progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+      // Cap progress at 100% for display
+      progress = Math.min(progress, 100)
+    }
+
     // Calculate status based on deadline
     let status = goal.status
     if (goal.deadlineValue && status !== 'completed') {
@@ -37,9 +61,9 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
         status = 'overdue'
       }
     }
-    
-    return { progress, completedTasks: completed, totalTasks: total, calculatedStatus: status }
-  }, [tasks, goal])
+
+    return { progress, completedTasks, totalTasks, calculatedStatus: status }
+  }, [tasks, stages, metrics, metricEntries, goal])
 
   const progressText = goal.progressCalculation === 'by_tasks'
     ? `${completedTasks} из ${totalTasks} задач`
@@ -132,13 +156,6 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
               </div>
             </div>
             
-            {/* Expected completion date */}
-            {goal.expectedCompletionDate && goal.status !== 'completed' && (
-              <div className="flex items-center gap-1 text-xs text-blue-600">
-                <TrendingUp className="w-3 h-3" />
-                <span>Прогноз: {formatDate(goal.expectedCompletionDate)}</span>
-              </div>
-            )}
           </div>
 
           {/* Progress bar */}

@@ -9,6 +9,15 @@ interface ProgressBarProps {
   color?: string
 }
 
+// Helper function to get color based on progress percentage
+function getProgressColor(progress: number): string {
+  if (progress < 25) return 'bg-red-500' // Low progress - red
+  if (progress < 50) return 'bg-orange-500' // Below half - orange
+  if (progress < 75) return 'bg-yellow-500' // Getting there - yellow
+  if (progress < 100) return 'bg-blue-500' // Almost done - blue
+  return 'bg-green-500' // Complete - green
+}
+
 export function ProgressBar({
   progress,
   className,
@@ -23,16 +32,24 @@ export function ProgressBar({
     lg: 'h-3',
   }
 
+  // Use provided color or determine based on progress
+  const barColor = color || getProgressColor(progress)
+  // Check if color is a hex color (starts with #)
+  const isHexColor = barColor.startsWith('#')
+
   return (
     <div className={cn('w-full', className)}>
       <div className={cn('w-full bg-gray-200 rounded-full overflow-hidden', sizeClasses[size])}>
         <div
           className={cn(
             'h-full transition-all duration-300 rounded-full',
-            color || 'bg-primary-600',
+            isHexColor ? '' : barColor,
             barClassName
           )}
-          style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }}
+          style={{
+            width: `${Math.min(Math.max(progress, 0), 100)}%`,
+            backgroundColor: isHexColor ? barColor : undefined
+          }}
         />
       </div>
       {showLabel && (

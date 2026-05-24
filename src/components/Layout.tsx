@@ -20,7 +20,7 @@ interface LayoutProps {
 }
 
 const navigation = [
-  { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Главная', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Цели', href: '/goals', icon: Target },
   { name: 'Метрики', href: '/metrics', icon: Activity },
   { name: 'Календарь', href: '/calendar', icon: Calendar },

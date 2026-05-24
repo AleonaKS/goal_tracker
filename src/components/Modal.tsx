@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -11,7 +12,21 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, children, className, size = 'medium' }: ModalProps) {
-  if (!isOpen) return null
+  const [visible, setVisible] = useState(false)
+  const [animating, setAnimating] = useState(false)
+
+  useEffect(() => {
+    if (isOpen) {
+      setAnimating(true)
+      requestAnimationFrame(() => setVisible(true))
+    } else {
+      setVisible(false)
+      const timer = setTimeout(() => setAnimating(false), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen])
+
+  if (!animating) return null
 
   const sizeClasses = {
     small: 'max-w-sm',
@@ -20,12 +35,23 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'med
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className={cn(
+        'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-200',
+        visible ? 'opacity-100' : 'opacity-0'
+      )}
+      onClick={onClose}
+    >
       <div
-        className={cn('modal-content', sizeClasses[size], className)}
+        className={cn(
+          'bg-white rounded-3xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col transition-all duration-200',
+          sizeClasses[size],
+          visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95',
+          className
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           <button
             onClick={onClose}
@@ -34,7 +60,7 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'med
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4 overflow-y-auto flex-1">{children}</div>
       </div>
     </div>
   )
@@ -61,12 +87,35 @@ export function ConfirmModal({
   cancelText = 'Отмена',
   variant = 'danger',
 }: ConfirmModalProps) {
-  if (!isOpen) return null
+  const [visible, setVisible] = useState(false)
+  const [animating, setAnimating] = useState(false)
+
+  useEffect(() => {
+    if (isOpen) {
+      setAnimating(true)
+      requestAnimationFrame(() => setVisible(true))
+    } else {
+      setVisible(false)
+      const timer = setTimeout(() => setAnimating(false), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen])
+
+  if (!animating) return null
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className={cn(
+        'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-200',
+        visible ? 'opacity-100' : 'opacity-0'
+      )}
+      onClick={onClose}
+    >
       <div
-        className="modal-content max-w-sm"
+        className={cn(
+          'bg-white rounded-3xl shadow-xl max-w-sm w-full max-h-[90vh] overflow-hidden flex flex-col transition-all duration-200',
+          visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4">

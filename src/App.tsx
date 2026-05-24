@@ -54,7 +54,7 @@ function ErrorScreen({ error }: { error: string }) {
 
 function App() {
   const { user, isLoading: authLoading, isInitialized, initialize } = useAuthStore()
-  const { isLoading: loading, error, fetchAll, setUser } = useApiDataStore()
+  const { error, fetchAll, setUser } = useApiDataStore()
   const { runAutoCalculations } = useAutoProgress()
   const hasLoadedData = useRef(false)
 
@@ -69,16 +69,19 @@ function App() {
   }, [user])
 
   // Load data when user logs in (with deduplication)
+  // ИСПРАВЛЕНИЕ: убрали fetchAll и runAutoCalculations из зависимостей
+  // чтобы предотвратить перезагрузку при изменении user (например, после refreshUser)
   useEffect(() => {
     if (user && !hasLoadedData.current) {
       hasLoadedData.current = true
+      console.log('[App] Loading data for user:', user.email)
       fetchAll().then(() => {
         // Run auto calculations after data is loaded
         runAutoCalculations()
       })
     }
-  }, [user, fetchAll, runAutoCalculations])
-
+  }, [user])  
+  
   // Show loading while initializing
   if (!isInitialized) {
     return <LoadingScreen authLoading={true} />
@@ -89,10 +92,12 @@ function App() {
     return <LoadingScreen authLoading={true} />
   }
 
-  // Show loading while loading data for authenticated user
-  if (user && loading) {
-    return <LoadingScreen authLoading={false} />
-  }
+  // ИСПРАВЛЕНИЕ: Убрали проверку loading чтобы не было мигания
+  // при CRUD операциях (updateTask, createMetricEntry и т.д.)
+  // Начальная загрузка контролируется через hasLoadedData.current
+  // if (user && loading) {
+  //   return <LoadingScreen authLoading={false} />
+  // }
 
   // Show error state
   if (error && user) {

@@ -1,4 +1,5 @@
 import { getClient } from './supabase'
+import { calculateGoalStatusFromGoal } from './calculations'
 import type { 
   User, 
   Category, 
@@ -7,7 +8,6 @@ import type {
   Task, 
   Metric, 
   MetricEntry, 
-  Unit, 
   FavoriteFilter,
   MetricAnalyticsCache,
   DashboardStats,
@@ -18,10 +18,11 @@ import type {
   MetricCreateInput,
   MetricEntryCreateInput,
   CategoryCreateInput,
-  UnitCreateInput,
+  Unit,
   StageCreateInput,
   Subtask,
-  SubtaskCreateInput
+  SubtaskCreateInput,
+  PointsHistoryEntry
 } from '@/types'
 
 // Local type matching database schema for favorite_filters
@@ -43,7 +44,26 @@ export async function getUserById(id: string): Promise<User | null> {
     .single()
   
   if (error) throw error
-  return data
+  
+  if (!data) return null
+  
+  // Map database fields to TypeScript interface (same as getUserProfile)
+  const user: User = {
+    id: data.id,
+    login: data.login,
+    email: data.email,
+    name: data.name,
+    passwordHash: data.password_hash,
+    settings: data.settings,
+    totalPoints: data.total_points || 0,  // Map total_points to totalPoints
+    level: data.level || 1,
+    createdAt: new Date(data.created_at),
+    updatedAt: new Date(data.updated_at)
+  }
+  
+  console.log('[API] getUserById mapped user:', { id: user.id, totalPoints: user.totalPoints })
+  
+  return user
 }
 
 export async function createUser(userData: Omit<User, 'id' | 'registrationDate'>): Promise<User> {
@@ -71,9 +91,19 @@ export async function getCategories(userId: string): Promise<Category[]> {
 }
 
 export async function createCategory(category: CategoryCreateInput): Promise<Category> {
+  // Transform camelCase to snake_case for database
+  const dbCategory: any = {
+    name: category.name,
+    description: category.description,
+    color: category.color,
+    icon: category.icon || 'folder',
+    user_id: category.userId,
+    is_default: false // Default to false for user-created categories
+  }
+
   const { data, error } = await getClient()
     .from('categories')
-    .insert([category])
+    .insert([dbCategory])
     .select()
     .single()
   
@@ -82,9 +112,18 @@ export async function createCategory(category: CategoryCreateInput): Promise<Cat
 }
 
 export async function updateCategory(id: string, updates: Partial<Category>): Promise<Category> {
+  // Transform camelCase to snake_case for database
+  const dbUpdates: any = {}
+  if (updates.name !== undefined) dbUpdates.name = updates.name
+  if (updates.description !== undefined) dbUpdates.description = updates.description
+  if (updates.color !== undefined) dbUpdates.color = updates.color
+  if (updates.icon !== undefined) dbUpdates.icon = updates.icon
+  if (updates.userId !== undefined) dbUpdates.user_id = updates.userId
+  if (updates.isDefault !== undefined) dbUpdates.is_default = updates.isDefault
+
   const { data, error } = await getClient()
     .from('categories')
-    .update(updates)
+    .update(dbUpdates)
     .eq('id', id)
     .select()
     .single()
@@ -154,14 +193,29 @@ export async function createGoal(goal: GoalCreateInput): Promise<Goal> {
   }
   // userId is optional - if not provided, will use RLS or auth context
   
+  // Determine if auto-calculation should be used
+  const shouldAutoCalculate = goal.autoCalculateStatus !== false // default to true
+  
+  // Calculate status if auto-calculation is enabled
+  let calculatedStatus: string | undefined
+  if (shouldAutoCalculate) {
+    // Build a partial goal for status calculation
+    const partialGoal: Partial<Goal> = {
+      ...goal,
+      progress: goal.progress || 0,
+      isFrozen: goal.isFrozen || false,
+    }
+    calculatedStatus = calculateGoalStatusFromGoal(partialGoal as Goal)
+  }
+  
   // Transform camelCase to snake_case for database
   const dbGoal: any = {
     name: goal.name,
     category_id: goal.categoryId,
     due_type: goal.deadlineType || 'none',
-    priority: goal.priority || 3,
+    priority: goal.priority ?? 3,
     progress_calculation: goal.progressCalculation || 'by_tasks',
-    status: goal.status || 'in_progress'
+    status: calculatedStatus || goal.status || 'in_progress'
   }
   
   // Add user_id only if provided
@@ -232,6 +286,27 @@ export async function createGoal(goal: GoalCreateInput): Promise<Goal> {
 }
 
 export async function updateGoal(id: string, updates: Partial<Goal>): Promise<Goal> {
+  // If autoCalculateStatus is enabled, calculate status automatically
+  let calculatedStatus: string | undefined
+  if (updates.autoCalculateStatus || (updates.autoCalculateStatus === undefined && !updates.status)) {
+    // Get current goal data to merge with updates
+    const { data: currentGoal, error: fetchError } = await getClient()
+      .from('goals')
+      .select('*')
+      .eq('id', id)
+      .single()
+    
+    if (!fetchError && currentGoal) {
+      // Build complete goal data by merging current with updates
+      const mergedGoal: Goal = {
+        ...currentGoal,
+        ...updates,
+        progress: updates.progress !== undefined ? updates.progress : currentGoal.progress,
+      }
+      calculatedStatus = calculateGoalStatusFromGoal(mergedGoal)
+    }
+  }
+
   // Transform camelCase to snake_case for database
   const dbUpdates: any = {}
   if (updates.name) dbUpdates.name = updates.name
@@ -256,7 +331,12 @@ export async function updateGoal(id: string, updates: Partial<Goal>): Promise<Go
 
   if (updates.dueMonthYear) dbUpdates.due_month_year = updates.dueMonthYear
   if (updates.dueYear) dbUpdates.due_year = updates.dueYear
-  if (updates.status) dbUpdates.status = updates.status
+  // Use calculated status if auto-calculation is enabled, otherwise use provided status
+  if (calculatedStatus) {
+    dbUpdates.status = calculatedStatus
+  } else if (updates.status) {
+    dbUpdates.status = updates.status
+  }
   if (updates.priority !== undefined) dbUpdates.priority = updates.priority
   if (updates.progress !== undefined) dbUpdates.progress = updates.progress
   if (updates.progressCalculation) dbUpdates.progress_calculation = updates.progressCalculation
@@ -289,8 +369,11 @@ export async function updateGoal(id: string, updates: Partial<Goal>): Promise<Go
       if (updates.deadlineValue instanceof Date) {
         dbUpdates.due_year = updates.deadlineValue.getFullYear()
       } else if (typeof updates.deadlineValue === 'string') {
-        dbUpdates.due_year = parseInt(updates.deadlineValue)
-      } else if (typeof updates.deadlineValue === 'number') {
+        const parsedYear = parseInt(updates.deadlineValue)
+        if (!isNaN(parsedYear)) {
+          dbUpdates.due_year = parsedYear
+        }
+      } else if (typeof updates.deadlineValue === 'number' && !isNaN(updates.deadlineValue)) {
         dbUpdates.due_year = updates.deadlineValue
       }
     }
@@ -367,9 +450,9 @@ export async function createTask(task: TaskCreateInput): Promise<Task> {
       : task.startDate
   }
 
-  // Only include goal_id/stage_id if they have valid values (not empty strings)
-  if (task.goalId && task.goalId !== '') dbTask.goal_id = task.goalId
-  if (task.stageId && task.stageId !== '') dbTask.stage_id = task.stageId
+  // Handle goal_id/stage_id - include if defined (even null to clear the field)
+  if (task.goalId !== undefined) dbTask.goal_id = task.goalId || null
+  if (task.stageId !== undefined) dbTask.stage_id = task.stageId || null
   
   // Time blocking fields
   if (task.duration !== undefined) dbTask.duration = task.duration
@@ -410,9 +493,9 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   // Only include fields that exist in database
   if (updates.name !== undefined) dbUpdates.name = updates.name
   if (updates.description !== undefined) dbUpdates.description = updates.description
-  // Only include goal_id/stage_id if they have valid values (not empty strings)
-  if (updates.goalId !== undefined && updates.goalId !== '') dbUpdates.goal_id = updates.goalId
-  if (updates.stageId !== undefined && updates.stageId !== '') dbUpdates.stage_id = updates.stageId
+  // Handle goal_id/stage_id updates - allow clearing with null
+  if (updates.goalId !== undefined) dbUpdates.goal_id = updates.goalId || null
+  if (updates.stageId !== undefined) dbUpdates.stage_id = updates.stageId || null
   if (updates.priority !== undefined) dbUpdates.priority = updates.priority
   if (updates.complexity !== undefined) dbUpdates.complexity = updates.complexity
   if (updates.weight !== undefined) dbUpdates.weight = updates.weight
@@ -443,10 +526,14 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
     return null
   }
   
-  // Handle Date conversion for dueDate
+  // Handle Date conversion for dueDate (with time)
   if (updates.dueDate !== undefined) {
-    const formatted = formatDateForDB(updates.dueDate)
-    if (formatted) dbUpdates.due_date = formatted
+    if (updates.dueDate instanceof Date) {
+      // Store as ISO string to preserve time
+      dbUpdates.due_date = updates.dueDate.toISOString()
+    } else if (typeof updates.dueDate === 'string') {
+      dbUpdates.due_date = updates.dueDate
+    }
   }
   if (updates.isPeriodBased !== undefined) dbUpdates.is_period_based = updates.isPeriodBased
   // Handle Date conversion for startDate
@@ -618,31 +705,39 @@ export async function createMetric(metric: MetricCreateInput): Promise<Metric> {
   // Ensure targetValue has a default value since DB requires it
   const targetValue = metric.targetValue ?? 100
 
+  // Get current user ID if not provided
+  const { data: { user } } = await getClient().auth.getUser()
+  const userId = metric.userId || user?.id
+
+  if (!userId) {
+    throw new Error('User ID is required to create metric')
+  }
+
+  // Map frontend types to database enum values (database supports all three types)
+  const typeMapping: Record<string, string> = {
+    'simple_habit': 'simple_habit',
+    'habit': 'habit',
+    'counter': 'counter'
+  }
+
   const dbMetric = {
     name: metric.name,
-    type: metric.type,
+    type: typeMapping[metric.type] || metric.type,
     description: metric.description,
-    goal_id: metric.goalId,
-    category_id: metric.categoryId,
-    start_value: metric.startValue ?? 0,
+    goal_id: metric.goalId || null,
+    category_id: metric.categoryId || null,
+    start_value: metric.initialValue ?? 0,
     target_value: targetValue,
-    unit_id: metric.unitId,
-    custom_unit: metric.customUnit,
+    custom_unit: metric.unit,
     input_mode: metric.inputMode,
     step_value: metric.stepValue,
-    accumulative: metric.accumulative ?? true,
     color: metric.color,
-    schedule_id: metric.scheduleId,
     auto_reset_enabled: metric.autoResetEnabled,
     reset_periodicity: metric.resetPeriodicity,
     reset_weekdays: metric.resetWeekdays,
     reset_day_of_month: metric.resetDayOfMonth,
     reset_custom_days: metric.resetCustomDays,
-    target_increase_enabled: metric.targetIncreaseEnabled,
-    target_increase_value: metric.targetIncreaseValue,
-    target_increase_type: metric.targetIncreaseType,
-    target_increase_periodicity: metric.targetIncreasePeriodicity,
-    user_id: metric.userId
+    user_id: userId
   }
 
   console.log('createMetric - dbMetric:', dbMetric)
@@ -670,26 +765,22 @@ export async function updateMetric(id: string, updates: Partial<Metric>): Promis
   if (updates.name !== undefined) dbUpdates.name = updates.name
   if (updates.type !== undefined) dbUpdates.type = updates.type
   if (updates.description !== undefined) dbUpdates.description = updates.description
-  if (updates.goalId !== undefined) dbUpdates.goal_id = updates.goalId
-  if (updates.categoryId !== undefined) dbUpdates.category_id = updates.categoryId
-  if (updates.startValue !== undefined) dbUpdates.start_value = updates.startValue
+  if (updates.goalId !== undefined) dbUpdates.goal_id = updates.goalId || null
+  if (updates.categoryId !== undefined) dbUpdates.category_id = updates.categoryId || null
+  if (updates.initialValue !== undefined) dbUpdates.start_value = updates.initialValue
   if (updates.targetValue !== undefined) dbUpdates.target_value = updates.targetValue
-  if (updates.unitId !== undefined) dbUpdates.unit_id = updates.unitId
-  if (updates.customUnit !== undefined) dbUpdates.custom_unit = updates.customUnit
+  if (updates.unit !== undefined) dbUpdates.custom_unit = updates.unit
   if (updates.inputMode !== undefined) dbUpdates.input_mode = updates.inputMode
   if (updates.stepValue !== undefined) dbUpdates.step_value = updates.stepValue
-  if (updates.accumulative !== undefined) dbUpdates.accumulative = updates.accumulative
+  if (updates.totalValue !== undefined) dbUpdates.total_value = updates.totalValue
+  if (updates.periodValue !== undefined) dbUpdates.period_value = updates.periodValue
   if (updates.color !== undefined) dbUpdates.color = updates.color
-  if (updates.scheduleId !== undefined) dbUpdates.schedule_id = updates.scheduleId
   if (updates.autoResetEnabled !== undefined) dbUpdates.auto_reset_enabled = updates.autoResetEnabled
   if (updates.resetPeriodicity !== undefined) dbUpdates.reset_periodicity = updates.resetPeriodicity
   if (updates.resetWeekdays !== undefined) dbUpdates.reset_weekdays = updates.resetWeekdays
   if (updates.resetDayOfMonth !== undefined) dbUpdates.reset_day_of_month = updates.resetDayOfMonth
   if (updates.resetCustomDays !== undefined) dbUpdates.reset_custom_days = updates.resetCustomDays
-  if (updates.targetIncreaseEnabled !== undefined) dbUpdates.target_increase_enabled = updates.targetIncreaseEnabled
-  if (updates.targetIncreaseValue !== undefined) dbUpdates.target_increase_value = updates.targetIncreaseValue
-  if (updates.targetIncreaseType !== undefined) dbUpdates.target_increase_type = updates.targetIncreaseType
-  if (updates.targetIncreasePeriodicity !== undefined) dbUpdates.target_increase_periodicity = updates.targetIncreasePeriodicity
+  // Remove targetIncrease fields as they don't exist in Metric type
   // progress field only - other stats go to metric_analytics_cache
   if (updates.progress !== undefined) dbUpdates.progress = updates.progress
 
@@ -1078,7 +1169,7 @@ export async function getAllMetricEntries(userId: string): Promise<MetricEntry[]
   return data.map(entry => ({
     id: entry.id,
     metricId: entry.metric_id,
-    entryDate: entry.entry_date,
+    entryDate: new Date(entry.entry_date),
     value: entry.value,
     finalValue: entry.final_value,
     note: entry.note,
@@ -1116,7 +1207,14 @@ export async function getMetricEntries(metricId: string): Promise<MetricEntry[]>
 export async function createMetricEntry(entry: MetricEntryCreateInput): Promise<MetricEntry> {
   console.log('createMetricEntry called with:', entry)
 
-  const entryDate = entry.entryDate.toISOString().split('T')[0]
+  if (!entry.entryDate) {
+    throw new Error('entryDate is required')
+  }
+
+  const y = entry.entryDate.getFullYear()
+  const m = String(entry.entryDate.getMonth() + 1).padStart(2, '0')
+  const d = String(entry.entryDate.getDate()).padStart(2, '0')
+  const entryDate = `${y}-${m}-${d}`
 
   // Transform field names to match database schema
   const dbEntry = {
@@ -1313,12 +1411,19 @@ export async function updateUserGamificationStats(
   if (updates.level !== undefined) dbUpdates.level = updates.level
   if (updates.gamificationEnabled !== undefined) dbUpdates.gamification_enabled = updates.gamificationEnabled
   
+  console.log('[API] updateUserGamificationStats called:', { userId, updates, dbUpdates })
+  
   const { error } = await getClient()
     .from('users')
     .update(dbUpdates)
     .eq('id', userId)
   
-  if (error) throw error
+  if (error) {
+    console.error('[API] updateUserGamificationStats error:', error)
+    throw error
+  }
+  
+  console.log('[API] updateUserGamificationStats success')
 }
 
 // ============================================================================
@@ -1444,6 +1549,45 @@ export async function updateCalendarEvent(
     color: data.color,
     createdAt: new Date(data.created_at)
   }
+}
+
+// Points History
+export async function addPointsHistoryEntry(
+  userId: string,
+  entry: {
+    action: string
+    points: number
+    date?: string
+  }
+): Promise<void> {
+  console.log('[API] addPointsHistoryEntry called with:', { userId, entry })
+  
+  const { error } = await getClient()
+    .from('points_history')
+    .insert({
+      user_id: userId,
+      action: entry.action,
+      points: entry.points,
+      created_at: entry.date || new Date().toISOString()
+    })
+  
+  if (error) throw error
+}
+
+export async function getPointsHistory(userId: string): Promise<PointsHistoryEntry[]> {
+  const { data, error } = await getClient()
+    .from('points_history')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  
+  if (error) throw error
+  
+  return data.map(entry => ({
+    action: entry.action,
+    points: entry.points,
+    date: new Date(entry.created_at).toLocaleString('ru-RU')
+  })) || []
 }
 
 export async function deleteCalendarEvent(id: string): Promise<void> {

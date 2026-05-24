@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Target, Calendar, CheckCircle, Circle, AlertCircle, Clock, TrendingUp, Flame, ChevronDown, ChevronUp, Edit2, Trash2 } from 'lucide-react'
+import { Plus, X, Target, Calendar, CheckCircle, Circle, AlertCircle, Clock, TrendingUp, Flame, ChevronDown, ChevronUp, Edit2, Trash2, Activity } from 'lucide-react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { Modal } from '@/components/Modal'
 import { GoalForm } from '@/components/forms/GoalForm'
@@ -26,8 +26,7 @@ export function DashboardPage() {
     deleteTask,
     createMetric,
     updateMetric,
-    deleteMetric,
-    isLoading 
+    deleteMetric 
   } = useApiDataStore()
   
   const [showGoalModal, setShowGoalModal] = useState(false)
@@ -40,6 +39,7 @@ export function DashboardPage() {
   const [expandedTasks, setExpandedTasks] = useState(false)
   const [achievementFilter, setAchievementFilter] = useState<'all' | 'habits' | 'counters' | 'tasks'>('all')
   const [showMetricAnalytics, setShowMetricAnalytics] = useState(false)
+  const [showFabMenu, setShowFabMenu] = useState(false)
   const [analyticsMetricId, setAnalyticsMetricId] = useState<string | null>(null)
 
   // Статистика целей
@@ -68,14 +68,19 @@ export function DashboardPage() {
     }> = []
 
     goals.forEach(goal => {
-      if (goal.dueDate || goal.dueMonthYear || goal.dueYear) {
-        goalDeadlines.push({
-          id: goal.id,
-          title: goal.name,
-          date: toISOString(goal.dueDate),
-          item: goal,
-          priority: goal.priority
-        })
+      if (goal.deadlineType !== 'none' && goal.deadlineValue) {
+        const deadlineDate = goal.deadlineType === 'specific_date' 
+          ? goal.deadlineValue 
+          : undefined
+        if (deadlineDate) {
+          goalDeadlines.push({
+            id: goal.id,
+            title: goal.name,
+            date: toISOString(deadlineDate),
+            item: goal,
+            priority: goal.priority
+          })
+        }
       }
     })
 
@@ -146,7 +151,7 @@ export function DashboardPage() {
           title: `${streak} выполнений подряд`,
           description: habit.name,
           value: streak,
-          referenceId: habit.id,
+          achievedAt: new Date(),
           createdAt: new Date()
         })
       }
@@ -155,7 +160,7 @@ export function DashboardPage() {
     // Прогресс счетчиков (показываем только если есть прогресс)
     metrics.filter(m => m.type === 'counter').forEach(counter => {
       const entries = metricEntries.filter(e => e.metricId === counter.id)
-      const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
+      const totalValue = entries.reduce((sum, e) => sum + e.value, 0)
       const progress = counter.targetValue > 0 ? Math.round((totalValue / counter.targetValue) * 100) : 0
       
       // Показываем только если есть записи
@@ -167,7 +172,7 @@ export function DashboardPage() {
           title: `${progress}%`,
           description: counter.name,
           value: progress,
-          referenceId: counter.id,
+          achievedAt: new Date(),
           createdAt: new Date()
         })
       }
@@ -186,13 +191,13 @@ export function DashboardPage() {
           title: task.name,
           description: 'Задача выполнена',
           value: 1,
-          referenceId: task.id,
+          achievedAt: new Date(task.completedAt || new Date()),
           createdAt: new Date(task.completedAt || new Date())
         })
       })
 
     // Сортируем по дате (сначала новые)
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    return result.sort((a, b) => new Date(b.achievedAt || 0).getTime() - new Date(a.achievedAt || 0).getTime())
   }, [metrics, metricEntries, tasks])
 
   const filteredAchievements = achievements.filter(a => {
@@ -227,78 +232,56 @@ export function DashboardPage() {
     setShowMetricModal(true)
   }
 
-  const handleCreateGoal = () => {
-    setSelectedGoal(null)
-    setShowGoalModal(false)
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <button
-            onClick={() => {
-              setSelectedGoal(null)
-              setShowGoalModal(true)
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Новая цель
-          </button>
-        </div>
-      </div>
-
       <div className="max-w-7xl mx-auto space-y-8">
         {/* ВИДЖЕТ 1: Статистика целей */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
-                <Clock className="w-5 h-5 text-blue-600" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-amber-50 rounded-2xl py-6 shadow-sm border-l-4 border-t-4 border-amber-400 hover:shadow-md transition-all relative">
+            <div className="absolute left-5 top-1/2 -translate-y-1/2">
+              <div className="p-2 bg-amber-400 rounded-xl">
+                <Clock className="w-6 h-6 text-white" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xl font-bold text-gray-900">{goalStats.in_progress}</div>
-                <div className="text-xs text-gray-500 truncate">В процессе</div>
-              </div>
+            </div>
+            <div className="flex flex-col items-start pl-20 pr-8">
+              <div className="text-3xl font-bold text-amber-700 leading-none">{goalStats.in_progress}</div>
+              <div className="text-sm text-amber-600 font-medium mt-1">В процессе</div>
             </div>
           </div>
           
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-green-100 rounded-lg flex-shrink-0">
-                <CheckCircle className="w-5 h-5 text-green-600" />
+          <div className="bg-emerald-50 rounded-2xl py-6 shadow-sm border-l-4 border-t-4 border-emerald-400 hover:shadow-md transition-all relative">
+            <div className="absolute left-5 top-1/2 -translate-y-1/2">
+              <div className="p-2 bg-emerald-400 rounded-xl">
+                <CheckCircle className="w-6 h-6 text-white" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xl font-bold text-gray-900">{goalStats.completed}</div>
-                <div className="text-xs text-gray-500 truncate">Завершено</div>
-              </div>
+            </div>
+            <div className="flex flex-col items-start pl-20 pr-8">
+              <div className="text-3xl font-bold text-emerald-700 leading-none">{goalStats.completed}</div>
+              <div className="text-sm text-emerald-600 font-medium mt-1">Завершено</div>
             </div>
           </div>
           
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
-                <AlertCircle className="w-5 h-5 text-red-600" />
+          <div className="bg-rose-50 rounded-2xl py-6 shadow-sm border-l-4 border-t-4 border-rose-400 hover:shadow-md transition-all relative">
+            <div className="absolute left-5 top-1/2 -translate-y-1/2">
+              <div className="p-2 bg-rose-400 rounded-xl">
+                <AlertCircle className="w-6 h-6 text-white" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xl font-bold text-gray-900">{goalStats.overdue}</div>
-                <div className="text-xs text-gray-500 truncate">Просрочено</div>
-              </div>
+            </div>
+            <div className="flex flex-col items-start pl-20 pr-8">
+              <div className="text-3xl font-bold text-rose-700 leading-none">{goalStats.overdue}</div>
+              <div className="text-sm text-rose-600 font-medium mt-1">Просрочено</div>
             </div>
           </div>
           
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-gray-100 rounded-lg flex-shrink-0">
-                <Calendar className="w-5 h-5 text-gray-600" />
+          <div className="bg-sky-50 rounded-2xl py-6 shadow-sm border-l-4 border-t-4 border-sky-400 hover:shadow-md transition-all relative">
+            <div className="absolute left-5 top-1/2 -translate-y-1/2">
+              <div className="p-2 bg-sky-400 rounded-xl">
+                <Calendar className="w-6 h-6 text-white" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xl font-bold text-gray-900">{goalStats.planned}</div>
-                <div className="text-xs text-gray-500 truncate">Запланировано</div>
-              </div>
+            </div>
+            <div className="flex flex-col items-start pl-20 pr-8">
+              <div className="text-3xl font-bold text-sky-700 leading-none">{goalStats.planned}</div>
+              <div className="text-sm text-sky-600 font-medium mt-1">Запланировано</div>
             </div>
           </div>
         </div>
@@ -363,8 +346,11 @@ export function DashboardPage() {
                         <div className="mt-3">
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div 
-                              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${goal.item.progress || 0}%` }}
+                              className="h-2 rounded-full transition-all duration-300"
+                              style={{ 
+                                width: `${goal.item.progress || 0}%`,
+                                backgroundColor: categories.find(c => c.id === goal.item.categoryId)?.color || '#3b82f6'
+                              }}
                             />
                           </div>
                           <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -375,16 +361,7 @@ export function DashboardPage() {
                       </div>
                     </div>
                     
-                    {/* Edit button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleEditGoal(goal.item)
-                      }}
-                      className="ml-3 p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
+
                   </div>
                 </div>
               )
@@ -559,14 +536,15 @@ export function DashboardPage() {
                 key={achievement.id}
                 className="p-4 border border-gray-200 rounded-xl hover:shadow-md transition-all cursor-pointer"
                 onClick={() => {
+                  // Use achievement.id as metric/task id since we use the same id
                   if (achievement.type === 'habit_streak' || achievement.type === 'counter_progress') {
-                    const metric = metrics.find(m => m.id === achievement.referenceId)
+                    const metric = metrics.find(m => m.id === achievement.id)
                     if (metric) {
                       setAnalyticsMetricId(metric.id)
                       setShowMetricAnalytics(true)
                     }
                   } else if (achievement.type === 'completed_task') {
-                    const task = tasks.find(t => t.id === achievement.referenceId)
+                    const task = tasks.find(t => t.id === achievement.id)
                     if (task) handleEditTask(task)
                   }
                 }}
@@ -625,6 +603,53 @@ export function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* FAB + Menu */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-50">
+        {showFabMenu && (
+          <>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedGoal(null)
+                setShowGoalModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <Target className="w-5 h-5 text-blue-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить цель</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedTask(null)
+                setShowTaskModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <CheckCircle className="w-5 h-5 text-purple-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить задачу</span>
+            </button>
+            <button
+              onClick={() => {
+                setShowFabMenu(false)
+                setSelectedMetric(null)
+                setShowMetricModal(true)
+              }}
+              className="flex items-center gap-3 bg-white shadow-lg rounded-full px-5 py-3 text-gray-700 hover:bg-gray-50 transition-all border border-gray-200"
+            >
+              <Activity className="w-5 h-5 text-green-600" />
+              <span className="text-sm font-medium whitespace-nowrap">Добавить метрику</span>
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => setShowFabMenu(!showFabMenu)}
+          className="w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-all flex items-center justify-center"
+        >
+          {showFabMenu ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+        </button>
       </div>
 
       {/* Модальное окно создания/редактирования цели */}

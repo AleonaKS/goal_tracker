@@ -62,9 +62,9 @@ export function SubtaskList({ taskId, subtasks, onSubtaskChange }: SubtaskListPr
       {totalCount > 0 && (
         <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
           <div className="flex-1 bg-gray-200 rounded-full h-2">
-            <div 
+            <div
               className="bg-green-500 h-2 rounded-full transition-all"
-              style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+              style={{ width: `${Math.min(Math.max((totalCount > 0 ? (completedCount / totalCount) * 100 : 0), 0), 100)}%` }}
             />
           </div>
           <span>{completedCount}/{totalCount}</span>

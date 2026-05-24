@@ -3,6 +3,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { stageSchema, type StageFormData } from '@/lib/validation'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import type { Stage } from '@/types'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 interface StageFormProps {
   goalId: string
@@ -28,6 +30,8 @@ export function StageForm({ goalId, initialData, onSubmit, onCancel }: StageForm
     },
   })
 
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
+
   const handleFormSubmit = (data: StageFormData) => {
     if (initialData?.id) {
       updateStage(initialData.id, data)
@@ -38,7 +42,7 @@ export function StageForm({ goalId, initialData, onSubmit, onCancel }: StageForm
   }
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4" noValidate>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Название этапа *
@@ -86,6 +90,8 @@ export function StageForm({ goalId, initialData, onSubmit, onCancel }: StageForm
       {errors.endDate?.type === 'custom' && (
         <p className="text-sm text-red-600">{errors.endDate.message}</p>
       )}
+
+      <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
 
       <div className="flex gap-3 pt-4">
         <button type="button" onClick={onCancel} className="btn-secondary flex-1">

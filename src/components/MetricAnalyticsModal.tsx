@@ -1,19 +1,27 @@
-import { useState, useMemo } from 'react'
-import { 
-  Plus, Minus, FileText, Edit3, History, ChevronLeft, ChevronRight, 
-  HelpCircle, ArrowUpRight, ArrowDownRight, Trash2, MoreVertical 
+import { useState, useMemo, useEffect, useRef } from 'react'
+import {
+  Plus, Minus, FileText, Edit3, History, ChevronLeft, ChevronRight,
+  HelpCircle, ArrowUpRight, ArrowDownRight, Trash2, MoreVertical,
+  CheckCircle2, X, TrendingUp, BarChart4
 } from 'lucide-react'
-import { Modal } from './Modal'
+import { Modal, ConfirmModal } from './Modal'
 import { ActivityHeatmap } from './ActivityHeatmap'
 import { QuickEntryForm } from './forms/QuickEntryForm'
 import { MetricForm } from './forms/MetricForm'
 import { useApiDataStore } from '@/stores/apiDataStore'
+import useGamificationActions from '@/hooks/useGamificationActions'
 import { cn, formatDate } from '@/lib/utils'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+import { getMetricEntries } from '@/lib/api'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import type { Metric, MetricEntry } from '@/types'
 
 type PeriodType = 'week' | 'month' | 'year'
 type ViewType = 'chart' | 'calendar' | 'history'
+type ChartType = 'bar' | 'line' | 'cumulative'
 
 interface MetricAnalyticsModalProps {
   isOpen: boolean
@@ -52,26 +60,116 @@ const formatDateShort = (date: Date): string => {
 }
 
 export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete }: MetricAnalyticsModalProps) {
-  const { metricEntries, deleteMetric, categories, createMetricEntry } = useApiDataStore()
-  const entries = metricEntries.filter(e => e.metricId === metric.id)
+  const { metricEntries, fetchMetricEntries, deleteMetric, deleteMetricEntry, categories } = useApiDataStore()
+  const { createMetricEntry } = useGamificationActions()
+  const entries = useMemo(
+    () => metricEntries.filter(e => e.metricId === metric.id),
+    [metricEntries, metric.id]
+  )
   const category = metric?.categoryId ? categories.find(c => c.id === metric.categoryId) : null
   
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week')
+
   const [currentDate, setCurrentDate] = useState<Date>(new Date())
   const [viewType, setViewType] = useState<ViewType>('chart')
+  const [chartType, setChartType] = useState<ChartType>('bar')
   const [showMenu, setShowMenu] = useState(false)
   const [showEntryModal, setShowEntryModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [entryMode, setEntryMode] = useState<'add' | 'subtract'>('add')
+  const [optimisticMetric, setOptimisticMetric] = useState<Metric | null>(null)
+  const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!isOpen) return
+    // Проверяем, есть ли уже записи для этой метрики в store
+    const hasEntriesForMetric = metricEntries.some(e => e.metricId === metric.id)
+    if (!hasEntriesForMetric) {
+      fetchMetricEntries(metric.id).catch(error => {
+        console.error('Failed to load metric entries for analytics modal:', error)
+      })
+    }
+    // Сбрасываем оптимистичное состояние при закрытии
+    setOptimisticMetric(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, metric.id])
   // Calculate all statistics
   const stats = useMemo(() => {
-    const totalValue = entries.reduce((sum, e) => sum + (e.isAddition !== false ? e.value : -e.value), 0)
-    
+    // Используем оптимистичное значение если есть, иначе считаем из entries
+    const totalValue = optimisticMetric?.totalValue !== undefined
+      ? optimisticMetric.totalValue
+      : entries.filter(e => !e.id.startsWith('temp-')).reduce((sum, e) => sum + e.value, 0)
+
+    // For habits with periodicity, calculate value for current period
+    const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
+    let periodValue = totalValue
+
+    if (hasPeriodicity) {
+      const now = new Date()
+      const dailyTotals = new Map<string, number>()
+      entries.forEach(e => {
+        const dateStr = toLocalDateStr(new Date(e.entryDate))
+        dailyTotals.set(dateStr, (dailyTotals.get(dateStr) || 0) + e.value)
+      })
+
+      // Calculate period boundaries based on resetPeriodicity
+      let periodStart = new Date()
+      let periodEnd = new Date()
+
+      if (metric.resetPeriodicity === 'daily') {
+        periodStart = new Date(now)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd = new Date(now)
+        periodEnd.setHours(23, 59, 59, 999)
+      } else if (metric.resetPeriodicity === 'weekly') {
+        const dayOfWeek = now.getDay() || 7
+        periodStart = new Date(now)
+        periodStart.setDate(now.getDate() - dayOfWeek + 1)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd = new Date(periodStart)
+        periodEnd.setDate(periodStart.getDate() + 6)
+        periodEnd.setHours(23, 59, 59, 999)
+      } else if (metric.resetPeriodicity === 'monthly') {
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+      } else if (metric.resetPeriodicity === 'yearly') {
+        periodStart = new Date(now.getFullYear(), 0, 1)
+        periodEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999)
+      } else if (metric.resetPeriodicity === 'every_n_days' && metric.resetCustomDays) {
+        const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24))
+        const periodIndex = Math.floor(dayOfYear / metric.resetCustomDays)
+        periodStart = new Date(now.getFullYear(), 0, periodIndex * metric.resetCustomDays + 1)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd = new Date(periodStart)
+        periodEnd.setDate(periodStart.getDate() + metric.resetCustomDays - 1)
+        periodEnd.setHours(23, 59, 59, 999)
+      } else if (metric.resetPeriodicity === 'weekdays') {
+        const dayOfWeek = now.getDay() || 7
+        periodStart = new Date(now)
+        periodStart.setDate(now.getDate() - dayOfWeek + 1)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd = new Date(periodStart)
+        periodEnd.setDate(periodStart.getDate() + 6)
+        periodEnd.setHours(23, 59, 59, 999)
+      }
+
+      // Sum values only within period
+      periodValue = 0
+      dailyTotals.forEach((value, dateStr) => {
+        const entryDate = new Date(dateStr)
+        if (entryDate >= periodStart && entryDate <= periodEnd) {
+          periodValue += value
+        }
+      })
+    }
+
     // Daily totals for record calculations
     const dailyTotals = new Map<string, number>()
     entries.forEach(e => {
-      const dateStr = new Date(e.entryDate).toISOString().split('T')[0]
+      if (!e.entryDate) return
+      const entryDate = new Date(e.entryDate)
+      if (isNaN(entryDate.getTime())) return
+      const dateStr = toLocalDateStr(entryDate)
       dailyTotals.set(dateStr, (dailyTotals.get(dateStr) || 0) + e.value)
     })
     
@@ -89,8 +187,10 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
     // Average interval calculation
     const sortedDates = [...entries]
-      .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime())
+      .filter(e => e.entryDate)
       .map(e => new Date(e.entryDate))
+      .filter(date => !isNaN(date.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())
     
     let totalInterval = 0
     let intervalCount = 0
@@ -110,8 +210,8 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     let tempStreak = 0
     let lastDate: Date | null = null
 
-    const today = new Date().toISOString().split('T')[0]
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+    const today = toLocalDateStr(new Date())
+    const yesterday = toLocalDateStr(new Date(Date.now() - 86400000))
     
     for (let i = 0; i < uniqueDates.length; i++) {
       const dateStr = uniqueDates[i]
@@ -142,6 +242,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
     return {
       totalValue,
+      periodValue,
       recordDays,
       maxDayValue,
       avgInterval,
@@ -149,45 +250,71 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       maxStreak,
       totalEntries: entries.length
     }
-  }, [entries])
+  }, [entries, metric])
 
   // Calculate progress
   const progress = useMemo(() => {
-    const current = stats.totalValue + (metric.startValue || 0)
+    const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
+    const sourceValue = hasPeriodicity ? stats.periodValue : stats.totalValue
+    const current = sourceValue + (metric.startValue || 0)
     const target = metric.targetValue || 100
-    const percent = Math.min(Math.round((current / target) * 100), 999)
+    const percent = Math.round(Math.min((current / target) * 100, 100))
     const remaining = Math.max(0, target - current)
-    
-    // Calculate expected progress based on reset periodicity
+
+    // Calculate expected progress based on resetPeriodicity
     const now = new Date()
     let daysInPeriod = 7 // default weekly
     let daysElapsed = now.getDay() || 7
-    
-    if (metric.resetPeriodicity === 'monthly') {
+
+    const periodType = metric.resetPeriodicity
+
+    if (periodType === 'monthly') {
       daysInPeriod = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
       daysElapsed = now.getDate()
-    } else if (metric.resetPeriodicity === 'yearly') {
+    } else if (periodType === 'yearly') {
       daysInPeriod = 365
       const startOfYear = new Date(now.getFullYear(), 0, 1)
       daysElapsed = Math.floor((now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24))
+    } else if (periodType === 'daily') {
+      daysInPeriod = 1
+      daysElapsed = 1
+    } else if (periodType === 'weekdays') {
+      const dayOfWeek = now.getDay() || 7
+      daysElapsed = dayOfWeek
+      daysInPeriod = 7
+    } else if (periodType === 'every_n_days' && metric.resetCustomDays) {
+      daysInPeriod = metric.resetCustomDays
+      const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24))
+      daysElapsed = (dayOfYear % metric.resetCustomDays) + 1
     }
-    
+
     const expectedProgress = Math.round((daysElapsed / daysInPeriod) * 100)
     const aheadBy = Math.max(0, percent - expectedProgress)
     const daysRemaining = Math.max(0, daysInPeriod - daysElapsed)
-    
+
     // Calculate period start and end dates
     let startDate = new Date()
     let endDate = new Date()
-    
-    if (metric.resetPeriodicity === 'monthly') {
+
+    if (periodType === 'daily') {
+      startDate = new Date(now)
+      startDate.setHours(0, 0, 0, 0)
+      endDate = new Date(now)
+      endDate.setHours(23, 59, 59, 999)
+    } else if (periodType === 'monthly') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1)
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    } else if (metric.resetPeriodicity === 'yearly') {
+    } else if (periodType === 'yearly') {
       startDate = new Date(now.getFullYear(), 0, 1)
       endDate = new Date(now.getFullYear(), 11, 31)
+    } else if (periodType === 'every_n_days' && metric.resetCustomDays) {
+      const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24))
+      const periodIndex = Math.floor(dayOfYear / metric.resetCustomDays)
+      startDate = new Date(now.getFullYear(), 0, periodIndex * metric.resetCustomDays + 1)
+      endDate = new Date(startDate)
+      endDate.setDate(startDate.getDate() + metric.resetCustomDays - 1)
     } else {
-      // Weekly (default)
+      // Weekly / weekdays (default) — Monday to Sunday
       const dayOfWeek = now.getDay() || 7
       startDate = new Date(now)
       startDate.setDate(now.getDate() - dayOfWeek + 1)
@@ -251,7 +378,10 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
   const chartData = useMemo(() => {
     const dailyTotals = new Map<string, number>()
     entries.forEach(e => {
-      const dateStr = new Date(e.entryDate).toISOString().split('T')[0]
+      if (!e.entryDate) return
+      const entryDate = new Date(e.entryDate)
+      if (isNaN(entryDate.getTime())) return
+      const dateStr = toLocalDateStr(entryDate)
       dailyTotals.set(dateStr, (dailyTotals.get(dateStr) || 0) + e.value)
     })
 
@@ -261,7 +391,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       for (let i = 0; i < 7; i++) {
         const date = new Date(periodStart)
         date.setDate(periodStart.getDate() + i)
-        const dateStr = date.toISOString().split('T')[0]
+        const dateStr = toLocalDateStr(date)
         const value = dailyTotals.get(dateStr) || 0
         data.push({
           label: getWeekDayName(i),
@@ -274,7 +404,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       // Month view: day by day with proper labels
       const data = []
       for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0]
+        const dateStr = toLocalDateStr(d)
         const value = dailyTotals.get(dateStr) || 0
         data.push({
           label: `${d.getDate()}`,
@@ -295,7 +425,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
         const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999)
         let monthTotal = 0
         for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
-          const dateStr = d.toISOString().split('T')[0]
+          const dateStr = toLocalDateStr(d)
           monthTotal += dailyTotals.get(dateStr) || 0
         }
         data.push({
@@ -310,25 +440,142 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
   }, [entries, periodStart, periodEnd, selectedPeriod])
 
+  // Cumulative chart data for counters
+  const cumulativeChartData = useMemo(() => {
+    if (metric.type === 'simple_habit') return []
+
+    // Get all entries sorted by date
+    const sortedEntries = [...entries]
+      .filter(e => e.entryDate)
+      .map(e => ({ ...e, entryDate: new Date(e.entryDate) }))
+      .filter(e => !isNaN(e.entryDate.getTime()))
+      .sort((a, b) => a.entryDate.getTime() - b.entryDate.getTime())
+
+    // Calculate cumulative value BEFORE the period starts (from all previous entries)
+    let cumulative = 0
+    const periodStartTime = periodStart.getTime()
+
+    for (const entry of sortedEntries) {
+      if (entry.entryDate.getTime() < periodStartTime) {
+        cumulative += entry.value
+      } else {
+        break // Stop once we reach period start (entries are sorted)
+      }
+    }
+
+    // Save initial cumulative (all entries before this period)
+    const initialCumulative = cumulative
+
+    // Filter entries within current period
+    const periodEntries = sortedEntries.filter(e => {
+      if (!e.entryDate) return false
+      const entryDate = new Date(e.entryDate)
+      return !isNaN(entryDate.getTime()) && entryDate >= periodStart && entryDate <= periodEnd
+    })
+
+    // Create cumulative data starting with pre-period total
+    const dailyCumulative = new Map<string, number>()
+
+    // Process entries within the period
+    periodEntries.forEach(entry => {
+      if (!entry.entryDate) return
+      const entryDate = new Date(entry.entryDate)
+      if (isNaN(entryDate.getTime())) return
+      const dateStr = toLocalDateStr(entryDate)
+      cumulative += entry.value
+      dailyCumulative.set(dateStr, cumulative)
+    })
+    
+    // Generate chart data based on period
+    const data = []
+    // Initialize with pre-period cumulative (all previous entries)
+    let lastCumulative = initialCumulative
+    if (selectedPeriod === 'week') {
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(periodStart)
+        date.setDate(periodStart.getDate() + i)
+        const dateStr = toLocalDateStr(date)
+        // Carry forward last cumulative value if no entry for this day
+        const dayValue = dailyCumulative.get(dateStr)
+        if (dayValue !== undefined) {
+          lastCumulative = dayValue
+        }
+        data.push({
+          label: getWeekDayName(i),
+          value: lastCumulative,
+          date: dateStr
+        })
+      }
+    } else if (selectedPeriod === 'month') {
+      for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
+        const dateStr = toLocalDateStr(d)
+        // Carry forward last cumulative value if no entry for this day
+        const dayValue = dailyCumulative.get(dateStr)
+        if (dayValue !== undefined) {
+          lastCumulative = dayValue
+        }
+        data.push({
+          label: `${d.getDate()}`,
+          value: lastCumulative,
+          date: dateStr,
+          sortKey: d.getTime()
+        })
+      }
+      data.sort((a, b) => a.sortKey - b.sortKey)
+    } else {
+      // Year view - cumulative by month
+      const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
+      const year = periodStart.getFullYear()
+      
+      for (let month = 0; month < 12; month++) {
+        const monthStart = new Date(year, month, 1)
+        const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999)
+        
+        // Get cumulative value at end of month (including previous periods)
+        let monthCumulative = initialCumulative
+        for (const entry of periodEntries) {
+          if (!entry.entryDate) continue
+          const entryDate = new Date(entry.entryDate)
+          if (isNaN(entryDate.getTime())) continue
+          if (entryDate <= monthEnd) {
+            monthCumulative += entry.value
+          }
+        }
+        
+        data.push({
+          label: monthNames[month],
+          value: monthCumulative,
+          date: `${year}-${String(month + 1).padStart(2, '0')}`,
+          sortKey: month
+        })
+      }
+      data.sort((a, b) => a.sortKey - b.sortKey)
+    }
+    
+    return data
+  }, [entries, periodStart, periodEnd, selectedPeriod, metric.type])
+
   // Calculate chart statistics
   const chartStats = useMemo(() => {
     const values = chartData.map(d => d.value)
     const total = values.reduce((sum, v) => sum + v, 0)
-    const activeDays = values.filter(v => v > 0).length
+    const activeDays = values.filter(v => v !== 0).length
     const average = activeDays > 0 ? (total / activeDays).toFixed(2).replace('.', ',') : '0'
     
     // Calculate trend (compare with previous period)
     const { start: prevStart, end: prevEnd } = getPreviousPeriodRange()
     const prevDailyTotals = new Map<string, number>()
     entries.forEach(e => {
+      if (!e.entryDate) return
       const entryDate = new Date(e.entryDate)
+      if (isNaN(entryDate.getTime())) return
       if (entryDate >= prevStart && entryDate <= prevEnd) {
-        const dateStr = entryDate.toISOString().split('T')[0]
+        const dateStr = toLocalDateStr(entryDate)
         prevDailyTotals.set(dateStr, (prevDailyTotals.get(dateStr) || 0) + e.value)
       }
     })
     const prevTotal = Array.from(prevDailyTotals.values()).reduce((sum, v) => sum + v, 0)
-    const prevActiveDays = Array.from(prevDailyTotals.values()).filter(v => v > 0).length
+    const prevActiveDays = Array.from(prevDailyTotals.values()).filter(v => v !== 0).length
     const prevAverage = prevActiveDays > 0 ? prevTotal / prevActiveDays : 0
     const currentAvg = activeDays > 0 ? total / activeDays : 0
     
@@ -369,7 +616,9 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     // Calculate daily values
     const dailyTotals = new Map<number, number>()
     entries.forEach(e => {
+      if (!e.entryDate) return
       const d = new Date(e.entryDate)
+      if (isNaN(d.getTime())) return
       if (d.getMonth() === month && d.getFullYear() === year) {
         const day = d.getDate()
         dailyTotals.set(day, (dailyTotals.get(day) || 0) + e.value)
@@ -436,50 +685,159 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
   // Handle quick add/subtract with fixed value
   const handleQuickAdd = async () => {
-    const stepValue = metric.stepValue || 1
-    const entries = metricEntries.filter(e => e.metricId === metric.id)
-    const currentTotal = entries.reduce((sum, e) => sum + (e.isAddition !== false ? e.value : -e.value), 0)
+    const stepValue = metric.stepValue ?? 1
+    const currentTotal = stats.totalValue
     const newTotal = currentTotal + stepValue
-    
-    await createMetricEntry({
-      metricId: metric.id,
-      value: stepValue,
-      finalValue: newTotal,
-      entryDate: new Date(),
-      isAddition: true,
-      note: 'Быстрое добавление'
+    const newProgress = metric.targetValue 
+      ? Math.min(100, Math.max(0, (newTotal / metric.targetValue) * 100))
+      : 0
+
+    // Оптимистичное обновление
+    setOptimisticMetric({
+      ...metric,
+      totalValue: newTotal,
+      progress: Math.round(newProgress)
     })
+
+    try {
+      await createMetricEntry(metric.id, stepValue, 'Быстрое добавление')
+      setOptimisticMetric(null)
+    } catch (error) {
+      console.error('Failed to create metric entry:', error)
+      setOptimisticMetric(null)
+    }
   }
 
   const handleQuickSubtract = async () => {
-    const stepValue = metric.stepValue || 1
-    const entries = metricEntries.filter(e => e.metricId === metric.id)
-    const currentTotal = entries.reduce((sum, e) => sum + (e.isAddition !== false ? e.value : -e.value), 0)
+    const stepValue = metric.stepValue ?? 1
+    const currentTotal = stats.totalValue
     const newTotal = Math.max(0, currentTotal - stepValue)
-    
-    await createMetricEntry({
-      metricId: metric.id,
-      value: stepValue,
-      finalValue: newTotal,
-      entryDate: new Date(),
-      isAddition: false,
-      note: 'Быстрое уменьшение'
+    const newProgress = metric.targetValue 
+      ? Math.min(100, Math.max(0, (newTotal / metric.targetValue) * 100))
+      : 0
+
+    // Оптимистичное обновление
+    setOptimisticMetric({
+      ...metric,
+      totalValue: newTotal,
+      progress: Math.round(newProgress)
     })
+
+    try {
+      await createMetricEntry(metric.id, -stepValue, 'Быстрое вычитание')
+      setOptimisticMetric(null)
+    } catch (error) {
+      console.error('Failed to create metric entry:', error)
+      setOptimisticMetric(null)
+    }
+  }
+
+  // Check if this is a simple habit (checkbox-style)
+  const isSimpleHabit = metric.type === 'simple_habit'
+
+  // Handle simple habit toggle (check/uncheck for today)
+  const handleSimpleHabitToggle = async () => {
+    const today = new Date()
+    const todayStr = toLocalDateStr(today)
+    
+    // Check if already completed today
+    const todayEntry = entries.find(e => {
+      if (!e.entryDate) return false
+      const entryDate = new Date(e.entryDate)
+      return !isNaN(entryDate.getTime()) && toLocalDateStr(entryDate) === todayStr
+    })
+    
+    if (todayEntry) {
+      // Already completed - do nothing or could uncheck
+      // For now, just close the modal
+      onClose()
+    } else {
+      // Create a simple entry
+      await createMetricEntry(metric.id, 1, 'Выполнено')
+    }
   }
 
   // Top action buttons
   const actionButtons = [
-    { id: 'plus', icon: Plus, label: `${metric.stepValue || 1}`, onClick: handleQuickAdd, color: 'text-blue-600' },
-    { id: 'minus', icon: Minus, label: `${metric.stepValue || 1}`, onClick: handleQuickSubtract, color: 'text-gray-600' },
+    { id: 'minus', icon: Minus, label: `${metric.stepValue ?? 1}`, onClick: handleQuickSubtract, color: 'text-red-600' },
     { id: 'record', icon: FileText, label: 'Запись', onClick: () => setShowEntryModal(true), color: 'text-gray-600' },
+    { id: 'plus', icon: Plus, label: `${metric.stepValue ?? 1}`, onClick: handleQuickAdd, color: 'text-blue-600' },
     { id: 'editor', icon: Edit3, label: 'Редактировать', onClick: () => setShowEditModal(true), color: 'text-gray-600' },
     { id: 'history', icon: History, label: 'История', onClick: () => setViewType('history'), color: 'text-gray-600' },
   ]
 
+  // Simple Habit View Component
+  const SimpleHabitView = () => {
+    const today = new Date()
+    const todayStr = toLocalDateStr(today)
+    const isCompletedToday = entries.some(e => {
+      if (!e.entryDate) return false
+      const entryDate = new Date(e.entryDate)
+      return !isNaN(entryDate.getTime()) && toLocalDateStr(entryDate) === todayStr
+    })
+    
+    // Calculate streak
+    const sortedDates = [...entries]
+      .filter(e => e.entryDate)
+      .map(e => new Date(e.entryDate))
+      .filter(date => !isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime())
+      .map(date => toLocalDateStr(date))
+    
+    let currentStreak = 0
+    let lastDate: string | null = null
+    
+    for (const dateStr of sortedDates) {
+      if (!lastDate) {
+        // First entry - check if it's today or yesterday
+        const entryDate = new Date(dateStr)
+        const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24))
+        if (daysDiff <= 1) {
+          currentStreak = 1
+          lastDate = dateStr
+        }
+      } else {
+        // Check if consecutive
+        const last = new Date(lastDate)
+        const current = new Date(dateStr)
+        const diffDays = Math.floor((last.getTime() - current.getTime()) / (1000 * 60 * 60 * 24))
+        if (diffDays === 1) {
+          currentStreak++
+          lastDate = dateStr
+        } else {
+          break
+        }
+      }
+    }
+    
+    return (
+      <div className="flex flex-col items-center justify-center py-8 space-y-6">
+        {/* Big Check Button */}
+        <button
+          onClick={handleSimpleHabitToggle}
+          className={cn(
+            "w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg",
+            isCompletedToday 
+              ? "bg-green-500 hover:bg-green-600 text-white"
+              : "bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-green-500"
+          )}
+        >
+          <CheckCircle2 className="w-16 h-16" />
+        </button>
+        
+        <p className="text-lg font-medium text-gray-700">
+          {isCompletedToday ? 'Отметить выполнение' : 'Отметить выполнение'}
+        </p>
+      </div>
+    )
+  }
+
+  if (!isOpen) return null
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div 
-        className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+        className="bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden max-w-4xl max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modern Light Header */}
@@ -511,34 +869,35 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           </div>
 
           {/* Action Buttons Row - Modern Style */}
-          <div className="flex justify-center gap-3 mt-4">
-            {actionButtons.map(btn => (
-              <button
-                key={btn.id}
-                onClick={btn.onClick}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
-              >
-                <btn.icon className="w-4 h-4" />
-                <span className="text-sm font-medium">{btn.label}</span>
-              </button>
-            ))}
-          </div>
+          {actionButtons.length > 0 && (
+            <div className="flex justify-center gap-3 mt-4">
+              {actionButtons.map(btn => (
+                <button
+                  key={btn.id}
+                  onClick={btn.onClick}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                >
+                  <btn.icon className="w-4 h-4" />
+                  <span className="text-sm font-medium">{btn.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50" style={{ maxHeight: 'calc(90vh - 140px)' }}>
+        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+          
+            <>
         {/* Data Analysis Section - Compact */}
         <div className="bg-white rounded-xl p-3 mb-3 shadow-sm">
           <h3 className="text-sm font-semibold text-gray-900 mb-2">Анализ данных</h3>
           
           <div className="space-y-1.5 text-sm">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-gray-600">
-                <span>Общее число</span>
-                <HelpCircle className="w-4 h-4 text-gray-400" />
-              </div>
+              <span className="text-gray-600">Общее число</span>
               <span className="text-blue-600 font-semibold">
-                {formatNumber(stats.totalValue)}{metric.customUnit || 'шт'}
+                {formatNumber(stats.totalValue)}
               </span>
             </div>
             
@@ -564,56 +923,62 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           </div>
         </div>
 
-        {/* Target Progress - Clean Design */}
+        {/* Target Progress */}
         <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">Целевой прогресс</h3>
-            <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">
-              {progress.aheadBy > 0 ? `+${progress.aheadBy}%` : 'в плане'}
-            </span>
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Целевой прогресс</h3>
+
+          <div className="mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-gray-900">
+                {(() => {
+                  const isPeriodBased = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
+                  const displayVal = isPeriodBased ? stats.periodValue : stats.totalValue
+                  return <>{formatNumber(displayVal + (metric.startValue || 0))} / {formatNumber(metric.targetValue || 0)}</>
+                })()}
+              </span>
+              <span className="text-sm font-medium text-gray-600">{progress.percent}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="h-2 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(progress.percent, 100)}%`, backgroundColor: metric.color }}
+              />
+            </div>
           </div>
-          
-          {/* Progress Stats */}
-          <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-gray-600">
-              {formatNumber(stats.totalValue + (metric.startValue || 0))} 
-              <span className="text-gray-400"> / {formatNumber(metric.targetValue || 0)} {metric.customUnit || 'шт'}</span>
-            </span>
-            <span className="text-gray-900 font-bold">{progress.percent}%</span>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden mb-3">
-            <div 
-              className="h-full bg-gradient-to-r from-blue-500 to-green-500 rounded-full transition-all"
-              style={{ width: `${Math.min(progress.percent, 100)}%` }}
-            />
-          </div>
-          
-          {/* Period Info */}
+
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span>{formatDateShort(progress.startDate)} — {formatDateShort(progress.endDate)}</span>
-            <span>Осталось: {progress.daysRemaining} дн.</span>
+            {progress.daysRemaining > 0 && (
+              <span>Осталось: {progress.daysRemaining} {progress.daysRemaining === 1 ? 'день' : progress.daysRemaining < 5 ? 'дня' : 'дней'}</span>
+            )}
           </div>
         </div>
 
         {/* Activity Heatmap */}
-        <div className="bg-white rounded-xl p-4 mb-4 shadow-sm max-w-3xl mx-auto">
+        <div className="bg-white rounded-xl p-4 mb-4 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-900">Активность</h3>
-            <button className="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-xs">
-              подробнее <ChevronRight className="w-3 h-3" />
-            </button>
           </div>
           {entries.length > 0 ? (
             <ActivityHeatmap
-              data={entries.map(e => ({
-                date: new Date(e.entryDate),
-                value: e.value
-              }))}
-              size="small"
+              data={(() => {
+                const dailyTotals = new Map<string, number>()
+                entries.forEach(e => {
+                  if (!e.entryDate) return
+                  const date = new Date(e.entryDate)
+                  if (isNaN(date.getTime())) return
+                  const key = toLocalDateStr(date)
+                  dailyTotals.set(key, (dailyTotals.get(key) || 0) + e.value)
+                })
+                return Array.from(dailyTotals.entries())
+                  .filter(([_, v]) => v !== 0)
+                  .map(([key, value]) => ({ date: new Date(key), value }))
+              })()}
+              size="large"
               showTitle={false}
               className="bg-transparent"
+              color={metric.color}
+              scrollToCurrentMonth={true}
             />
           ) : (
             <div className="h-24 flex items-center justify-center text-gray-400 text-sm">
@@ -679,6 +1044,50 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
               </div>
             </div>
 
+            {/* Chart Type Toggle - three buttons */}
+            {metric.type !== 'simple_habit' && (
+              <div className="flex items-center justify-center mb-4">
+                <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+                  <button
+                    onClick={() => setChartType('bar')}
+                    className={cn(
+                      'px-3 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-1.5',
+                      chartType === 'bar'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    <BarChart4 className="w-4 h-4" />
+                    Столбцы
+                  </button>
+                  <button
+                    onClick={() => setChartType('line')}
+                    className={cn(
+                      'px-3 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-1.5',
+                      chartType === 'line'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    <TrendingUp className="w-4 h-4" />
+                    Линия
+                  </button>
+                  <button
+                    onClick={() => setChartType('cumulative')}
+                    className={cn(
+                      'px-3 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-1.5',
+                      chartType === 'cumulative'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    <TrendingUp className="w-4 h-4" />
+                    Накопление
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Date Navigation */}
             <div className="flex items-center justify-center gap-4 mb-4">
               <button 
@@ -698,60 +1107,76 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
               </button>
             </div>
 
-            {/* Bar Chart */}
+            {/* Chart */}
             <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
-              {chartData.length > 0 ? (
+              {(chartType === 'cumulative' ? cumulativeChartData : chartData).length > 0 ? (
                 <>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                        <XAxis 
-                          dataKey="label" 
-                          tick={{ fontSize: 12, fill: '#6b7280' }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <YAxis 
-                          tick={{ fontSize: 12, fill: '#6b7280' }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'white', 
-                            border: '1px solid #e5e7eb', 
-                            borderRadius: '8px',
-                            fontSize: '12px'
-                          }}
-                          formatter={(value: number) => [`${value} ${metric.customUnit || ''}`, 'Значение']}
-                        />
-                        <Bar 
-                          dataKey="value" 
-                          fill="#3b82f6" 
-                          radius={[4, 4, 0, 0]}
-                          maxBarSize={40}
-                        />
-                      </BarChart>
+                      {chartType === 'bar' ? (
+                        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'white', border: '2px solid ' + metric.color, borderRadius: '12px', fontSize: '14px', fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '12px 16px' }}
+                            labelStyle={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}
+                            formatter={(value: number) => [<span className="text-lg font-bold text-gray-900">{value} {metric.customUnit || ''}</span>, null]}
+                          />
+                          <Bar dataKey="value" fill={metric.color} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        </BarChart>
+                      ) : chartType === 'line' ? (
+                        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'white', border: '2px solid ' + metric.color, borderRadius: '12px', fontSize: '14px', fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '12px 16px' }}
+                            labelStyle={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}
+                            formatter={(value: number) => [<span className="text-lg font-bold text-gray-900">{value} {metric.customUnit || ''}</span>, null]}
+                          />
+                          <Line type="monotone" dataKey="value" stroke={metric.color} strokeWidth={2} dot={{ fill: metric.color, r: 3 }} activeDot={{ r: 5 }} />
+                        </LineChart>
+                      ) : (
+                        <LineChart data={cumulativeChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: 'white', border: '2px solid ' + metric.color, borderRadius: '12px', fontSize: '14px', fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '12px 16px' }}
+                            labelStyle={{ fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}
+                            formatter={(value: number, name: string, props: any) => {
+                              const dataIndex = props?.payload?.index || 0
+                              const prevValue = dataIndex > 0 ? cumulativeChartData[dataIndex - 1]?.value : 0
+                              const delta = value - prevValue
+                              return [
+                                <span className="text-lg font-bold text-gray-900">{value} {metric.customUnit || ''}</span>,
+                                <span className="text-sm text-gray-600">
+                                  Накопительно {delta > 0 && <span className="text-green-600">+{delta}</span>}
+                                </span>
+                              ]
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke={metric.color}
+                            strokeWidth={3}
+                            dot={{ fill: metric.color, r: 4, stroke: 'white', strokeWidth: 2 }}
+                            activeDot={{ r: 6, stroke: metric.color, strokeWidth: 2 }}
+                          />
+                          {metric.targetValue && <ReferenceLine y={metric.targetValue} stroke="#10b981" strokeDasharray="5 5" label={{ value: "Цель", position: "right" }} />}
+                        </LineChart>
+                      )}
                     </ResponsiveContainer>
                   </div>
-                  
+
                   {/* Chart Stats */}
                   <div className="flex items-center justify-center gap-4 text-sm text-gray-600 mt-4 pt-4 border-t">
                     <span>
-                      в целом: <strong className="text-blue-600">{chartStats.total}</strong> ({chartStats.activeDays} d) |
+                      всего: <strong className="text-blue-600">{chartStats.total}</strong> ({chartStats.activeDays} активных дн) |
                     </span>
                     <span className="flex items-center gap-1">
                       Среднее: <strong className="text-blue-600">{chartStats.average}</strong>
-                      {chartStats.trendDirection === 'up' && (
-                        <span className="text-green-600 flex items-center">
-                          <ArrowUpRight className="w-4 h-4" />{chartStats.trendPercent}%
-                        </span>
-                      )}
-                      {chartStats.trendDirection === 'down' && (
-                        <span className="text-red-600 flex items-center">
-                          <ArrowDownRight className="w-4 h-4" />{chartStats.trendPercent}%
-                        </span>
-                      )}
+                      {chartStats.trendDirection === 'up' && <span className="text-green-600 flex items-center"><ArrowUpRight className="w-4 h-4" />{chartStats.trendPercent}%</span>}
+                      {chartStats.trendDirection === 'down' && <span className="text-red-600 flex items-center"><ArrowDownRight className="w-4 h-4" />{chartStats.trendPercent}%</span>}
                     </span>
                   </div>
                 </>
@@ -798,21 +1223,24 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
               {calendarData.days.map((day, i) => (
                 <div key={i} className="aspect-square flex flex-col items-center justify-center p-1">
                   {day ? (
-                    <div className={cn(
-                      'w-10 h-10 rounded-full flex flex-col items-center justify-center text-sm relative',
-                      day.hasEntry ? 'bg-blue-100 text-blue-900' : 'text-gray-700',
-                      day.isToday && 'ring-2 ring-blue-500'
-                    )}>
-                      <span className={cn(
-                        'font-medium',
-                        day.hasEntry && 'text-blue-900'
-                      )}>{day.date}</span>
+                    <div
+                      className={cn(
+                        'w-10 h-10 rounded-full flex flex-col items-center justify-center text-sm relative',
+                        day.isToday && 'ring-2'
+                      )}
+                      style={{
+                        backgroundColor: day.hasEntry ? `${metric.color}20` : undefined,
+                        color: day.hasEntry ? metric.color : undefined,
+                        borderColor: day.isToday ? metric.color : undefined,
+                      }}
+                    >
+                      <span className="font-medium">{day.date}</span>
                     </div>
                   ) : (
                     <div className="w-10 h-10" />
                   )}
                   {day && day.value > 0 && (
-                    <span className="text-xs text-blue-600 mt-1 font-medium">+{day.value}</span>
+                    <span className="text-xs mt-1 font-medium" style={{ color: metric.color }}>+{day.value}</span>
                   )}
                 </div>
               ))}
@@ -820,21 +1248,23 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
             {/* Calendar Stats */}
             <div className="mt-4 pt-4 border-t space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">Цели достигнуты в этом месяце</span>
-                <span className="text-blue-600 font-semibold">{calendarData.goalAchievedDays} дня</span>
-              </div>
+               
               <div className="flex items-center justify-between">
                 <span className="text-gray-600 font-medium">Итого за месяц:</span>
                 <div className="flex items-center gap-4">
-                  <span className="text-blue-600 font-bold text-lg">{calendarData.monthTotal}</span>
+                  <span style={{ color: metric.color }} className="font-bold text-lg">{calendarData.monthTotal}</span>
                   <button 
                     onClick={() => setShowEntryModal(true)}
-                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
+                    className="flex items-center gap-1 font-medium"
+                    style={{ color: metric.color }}
                   >
                     Добавить запись <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Цели достигнуты в этом месяце</span>
+                <span style={{ color: metric.color }} className="font-semibold">{calendarData.goalAchievedDays} дня</span>
               </div>
             </div>
           </div>
@@ -853,23 +1283,33 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
                     return bTime - aTime
                   })
                   .map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={entry.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg group">
                       <div>
                         <p className="font-medium">
-                          {entry.isAddition ? '+' : '-'}{entry.value} {metric.customUnit || ''}
+                          {entry.value > 0 ? '+' : '-'}{Math.abs(entry.value)} {metric.customUnit || ''}
                         </p>
                         {entry.note && <p className="text-sm text-gray-500">{entry.note}</p>}
                       </div>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(entry.entryDate)}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-500">
+                          {formatDate(entry.entryDate)}
+                        </p>
+                        <button
+                          onClick={() => setDeleteEntryId(entry.id)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
               </div>
             )}
           </div>
         )}
-      </div>
+            </>
+          
+        </div>
 
       {/* Entry Modal - Quick Entry Form */}
       <QuickEntryForm
@@ -880,14 +1320,11 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
         mode={entryMode}
         onSave={async (data) => {
           try {
-            await createMetricEntry({
-              metricId: metric.id,
-              value: data.value,
-              finalValue: data.finalValue,
-              note: data.note,
-              entryDate: data.entryDate,
-              isAddition: data.isAddition
-            })
+            const signedValue = data.isAddition
+              ? Math.abs(data.value)
+              : -Math.abs(data.value)
+
+            await createMetricEntry(metric.id, signedValue, data.note, data.entryDate)
             setShowEntryModal(false)
           } catch (err) {
             console.error('Failed to save entry:', err)
@@ -912,6 +1349,22 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           onCancel={() => setShowEditModal(false)}
         />
       </Modal>
+
+      {/* Delete Entry Confirmation */}
+      <ConfirmModal
+        isOpen={!!deleteEntryId}
+        onClose={() => setDeleteEntryId(null)}
+        onConfirm={async () => {
+          if (deleteEntryId) {
+            await deleteMetricEntry(deleteEntryId)
+            setDeleteEntryId(null)
+          }
+        }}
+        title="Удалить запись?"
+        message="Вы уверены, что хотите удалить эту запись? Это действие нельзя отменить."
+        confirmText="Удалить"
+        variant="danger"
+      />
       </div>
     </div>
   )

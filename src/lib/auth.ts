@@ -205,19 +205,45 @@ export async function getCurrentUser() {
 }
 
 export async function getUserProfile(userId: string): Promise<User | null> {
-  if (isDemoMode()) {
-    // Demo mode - return demo user profile
-    return demoUser
-  }
-
+  console.log('[Auth] getUserProfile called for userId:', userId)
+  
+  // Always try to get fresh data from database
   const { data, error } = await getClient()
     .from('users')
     .select('*')
     .eq('id', userId)
-    .single()
+    .maybeSingle()  // Use maybeSingle instead of single to avoid error if not found
   
-  if (error) throw error
-  return data
+  if (error) {
+    console.error('[Auth] Error fetching user profile:', error)
+    if (isDemoMode()) {
+      // Demo mode fallback - return demo user with updated totalPoints
+      return { ...demoUser, id: userId }
+    }
+    throw error
+  }
+  
+  if (!data) {
+    console.log('[Auth] getUserProfile - user not found')
+    return null
+  }
+  
+  // Map database fields to TypeScript interface
+  const user: User = {
+    id: data.id,
+    login: data.login,
+    email: data.email,
+    name: data.name,
+    passwordHash: data.password_hash,
+    settings: data.settings,
+    totalPoints: data.total_points || 0,  // Map total_points to totalPoints
+    level: data.level || 1,
+    createdAt: new Date(data.created_at),
+    updatedAt: new Date(data.updated_at)
+  }
+  
+  console.log('[Auth] getUserProfile result:', user)
+  return user
 }
 
 export async function onAuthStateChange(callback: (user: any) => void) {

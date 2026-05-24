@@ -6,14 +6,18 @@ import { useApiDataStore } from '@/stores/apiDataStore'
 import { predefinedUnits, cn } from '@/lib/utils'
 import type { Metric, Periodicity } from '@/types'
 import { Modal } from '../Modal'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 interface MetricFormProps {
   initialData?: Partial<Metric>
+  goalId?: string
   onSubmit: () => void
   onCancel: () => void
 }
 
 const periodicityOptions: { value: Periodicity; label: string }[] = [
+  { value: 'none', label: 'Нет' },
   { value: 'daily', label: 'Каждый день' },
   { value: 'weekly', label: 'Каждую неделю' },
   { value: 'monthly', label: 'Каждый месяц' },
@@ -31,9 +35,25 @@ const colors = [
   '#ec4899', // pink
   '#06b6d4', // cyan
   '#6b7280', // gray
+  '#f97316', // orange
+  '#84cc16', // lime
+  '#14b8a6', // teal
+  '#a855f7', // violet
+  '#e11d48', // rose
+  '#0ea5e9', // sky
+  '#22c55e', // emerald
+  '#f43f5e', // fuchsia
+  '#6366f1', // indigo
+  '#0891b2', // cyan-dark
+  '#eab308', // yellow-dark
+  '#dc2626', // red-dark
+  '#7c3aed', // purple-dark
+  '#db2777', // pink-dark
+  '#059669', // emerald-dark
+  '#2563eb', // blue-dark
 ]
 
-export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps) {
+export function MetricForm({ initialData, goalId, onSubmit, onCancel }: MetricFormProps) {
   const { goals, categories, createMetric, updateMetric } = useApiDataStore()
   const [showUnitModal, setShowUnitModal] = useState(false)
 
@@ -50,19 +70,22 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
       type: initialData?.type || 'habit',
       description: initialData?.description || '',
       categoryId: initialData?.categoryId || '',
-      goalId: initialData?.goalId,
-      initialValue: initialData?.startValue || 0,
-      targetValue: initialData?.targetValue || 100,
-      unit: initialData?.unitId || '',
+      goalId: goalId || initialData?.goalId,
+      initialValue: initialData?.initialValue || 0,
+      targetValue: initialData?.targetValue || (initialData?.type === 'simple_habit' ? undefined : 100),
+      unit: initialData?.customUnit || initialData?.unit || 'раз',
       inputMode: initialData?.inputMode || 'fixed_step',
-      stepValue: initialData?.stepValue || 1,
-      periodicity: initialData?.periodicity || 'daily',
-      nDays: initialData?.nDays || 7,
-      weekdays: initialData?.weekdays || [1, 2, 3, 4, 5],
+      stepValue: initialData?.stepValue ?? 1,
+      periodicity: (initialData?.periodicity || initialData?.resetPeriodicity || (!initialData ? 'none' : 'daily')) as any,
+      nDays: initialData?.nDays || initialData?.resetCustomDays || 7,
+      weekdays: initialData?.weekdays || initialData?.resetWeekdays || [1, 2, 3, 4, 5],
+      autoResetEnabled: initialData?.autoResetEnabled ?? false,
+      resetPeriodicity: initialData?.resetPeriodicity || undefined,
       color: initialData?.color || colors[0],
     },
   })
 
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
   const periodicity = watch('periodicity')
   const inputMode = watch('inputMode')
   const selectedColor = watch('color')
@@ -73,10 +96,22 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
   const targetIncreaseEnabled = watch('targetIncreaseEnabled')
 
   const handleFormSubmit = (data: MetricFormData) => {
+    const metricData = {
+      ...data,
+      ...(data.autoResetEnabled && data.resetPeriodicity === 'weekdays' && data.weekdays
+        ? { resetWeekdays: data.weekdays }
+        : {}),
+      ...(data.autoResetEnabled && data.resetPeriodicity === 'every_n_days' && data.nDays
+        ? { resetCustomDays: data.nDays }
+        : {}),
+      ...(data.autoResetEnabled && !initialData?.id
+        ? { lastResetAt: new Date() }
+        : {}),
+    }
     if (initialData?.id) {
-      updateMetric(initialData.id, data)
+      updateMetric(initialData.id, metricData)
     } else {
-      createMetric(data as Omit<Metric, 'id' | 'createdAt'>)
+      createMetric(metricData as Omit<Metric, 'id' | 'createdAt'>)
     }
     onSubmit()
   }
@@ -92,7 +127,59 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
 
   return (
     <>
-      <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4" noValidate>
+        {/* Type Selection - Moved to top */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            Тип метрики *
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setValue('type', 'simple_habit')
+                // Auto-set defaults for simple habit
+                setValue('targetValue', 1)
+                setValue('inputMode', 'fixed_step')
+                setValue('stepValue', 1)
+                setValue('unit', 'раз')
+              }}
+              className={cn(
+                "p-3 rounded-lg border-2 transition-all text-center",
+                type === 'simple_habit'
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 hover:border-gray-300 text-gray-600"
+              )}
+            >
+              <div className="font-medium">Простая привычка</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setValue('type', 'habit')}
+              className={cn(
+                "p-3 rounded-lg border-2 transition-all text-center",
+                type === 'habit'
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 hover:border-gray-300 text-gray-600"
+              )}
+            >
+              <div className="font-medium">Сложная привычка</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setValue('type', 'counter')}
+              className={cn(
+                "p-3 rounded-lg border-2 transition-all text-center",
+                type === 'counter'
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 hover:border-gray-300 text-gray-600"
+              )}
+            >
+              <div className="font-medium">Счётчик</div>
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -101,7 +188,7 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
             <input
               {...register('name')}
               className="input"
-              placeholder="Например: Чтение книг"
+              placeholder={type === 'simple_habit' ? "Например: Утренняя зарядка" : "Например: Чтение книг"}
             />
             {errors.name && (
               <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
@@ -126,18 +213,7 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Тип
-            </label>
-            <select {...register('type')} className="input">
-              <option value="habit">Привычка</option>
-              <option value="counter">Счётчик</option>
-            </select>
-          </div>
-        </div>
-
+        {/* Description and Goal - always shown */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Описание
@@ -164,73 +240,189 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Начальное значение
-            </label>
-            <input
-              type="number"
-              {...register('initialValue', { valueAsNumber: true })}
-              className="input"
-              min={0}
-            />
-          </div>
+        {/* Show value inputs only for counter and habit, hide for simple_habit */}
+        {type !== 'simple_habit' && (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Начальное значение
+              </label>
+              <input
+                type="number"
+                {...register('initialValue', { valueAsNumber: true })}
+                className="input"
+                min={0}
+              />
+            </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Целевое значение *
+              </label>
+              <input
+                type="number"
+                {...register('targetValue', { valueAsNumber: true })}
+                className="input"
+                min={1}
+              />
+              {errors.targetValue && (
+                <p className="mt-1 text-sm text-red-600">{errors.targetValue.message}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* For simple habit, no info block needed */}
+        {/* Hide unit selection for simple habit */}
+        {type !== 'simple_habit' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Целевое значение *
+              Единица измерения *
             </label>
-            <input
-              type="number"
-              {...register('targetValue', { valueAsNumber: true })}
-              className="input"
-              min={1}
-            />
-            {errors.targetValue && (
-              <p className="mt-1 text-sm text-red-600">{errors.targetValue.message}</p>
+            <div className="flex gap-2">
+              <input
+                {...register('unit')}
+                className="input flex-1"
+                placeholder="стр, мин, км..."
+                readOnly
+              />
+              <button
+                type="button"
+                onClick={() => setShowUnitModal(true)}
+                className="btn-secondary"
+              >
+                Выбрать
+              </button>
+            </div>
+            {errors.unit && (
+              <p className="mt-1 text-sm text-red-600">{errors.unit.message}</p>
             )}
           </div>
-        </div>
+        )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Единица измерения *
-          </label>
-          <div className="flex gap-2">
-            <input
-              {...register('unit')}
-              className="input flex-1"
-              placeholder="стр, мин, км..."
-              readOnly
-            />
-            <button
-              type="button"
-              onClick={() => setShowUnitModal(true)}
-              className="btn-secondary"
-            >
-              Выбрать
-            </button>
-          </div>
-          {errors.unit && (
-            <p className="mt-1 text-sm text-red-600">{errors.unit.message}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Режим ввода
-          </label>
-          <select {...register('inputMode')} className="input">
-            <option value="fixed_step">Фиксированный шаг</option>
-            <option value="manual">Ручной ввод</option>
-          </select>
-        </div>
-
-        {inputMode === 'fixed_step' && (
+        {/* Hide input mode for simple habit */}
+        {type !== 'simple_habit' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Шаг изменения
+              Режим ввода
+            </label>
+            <select {...register('inputMode')} className="input">
+              <option value="fixed_step">Фиксированный шаг</option>
+              <option value="manual">Ручной ввод</option>
+            </select>
+          </div>
+        )}
+
+        {/* Hide periodicity for simple habit */}
+        {type !== 'simple_habit' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Периодичность
+            </label>
+            <select
+              value={periodicity}
+              onChange={(e) => {
+                const val = e.target.value as 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'every_n_days' | 'weekdays'
+                setValue('periodicity', val, { shouldDirty: true, shouldValidate: true })
+                if (val === 'none') {
+                  setValue('autoResetEnabled', false)
+                  setValue('resetPeriodicity', 'none' as any)
+                  setValue('resetWeekdays', undefined as any)
+                  setValue('resetCustomDays', undefined as any)
+                } else if (val !== 'daily') {
+                  setValue('autoResetEnabled', true)
+                  setValue('resetPeriodicity', val as any)
+                  if (val === 'weekdays') {
+                    setValue('resetWeekdays', watch('weekdays'))
+                  } else if (val === 'every_n_days') {
+                    setValue('resetCustomDays', watch('nDays'))
+                  } else {
+                    setValue('resetWeekdays', undefined as any)
+                    setValue('resetCustomDays', undefined as any)
+                  }
+                } else {
+                  setValue('autoResetEnabled', false)
+                  setValue('resetPeriodicity', 'daily' as any)
+                  setValue('resetWeekdays', undefined as any)
+                  setValue('resetCustomDays', undefined as any)
+                }
+              }}
+              className="input"
+            >
+              {periodicityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            {periodicity === 'every_n_days' && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Каждые N дней
+                </label>
+                <input
+                  type="number"
+                  {...register('nDays', { valueAsNumber: true })}
+                  className="input"
+                  min={1}
+                  max={365}
+                  placeholder="Например: 7"
+                />
+                {errors.nDays && (
+                  <p className="mt-1 text-sm text-red-600">{errors.nDays.message}</p>
+                )}
+              </div>
+            )}
+
+            {periodicity === 'weekdays' && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Дни недели
+                </label>
+                <div className="flex gap-1">
+                  {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dayName, index) => {
+                    const weekdayValue = index + 1 // 1=Пн, ..., 7=Вс
+                    const currentWeekdays = watch('weekdays') || []
+                    const isSelected = currentWeekdays.includes(weekdayValue)
+                    return (
+                      <button
+                        key={weekdayValue}
+                        type="button"
+                        onClick={() => {
+                          const current = currentWeekdays
+                          const updated = isSelected
+                            ? current.filter(d => d !== weekdayValue)
+                            : [...current, weekdayValue].sort()
+                          setValue('weekdays', updated)
+                          if (periodicity === 'weekdays') {
+                            setValue('resetWeekdays', updated)
+                          }
+                        }}
+                        className={cn(
+                          'w-10 h-10 rounded-full text-sm font-medium transition-all',
+                          isSelected
+                            ? 'bg-blue-500 text-white shadow-sm'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        )}
+                      >
+                        {dayName}
+                      </button>
+                    )
+                  })}
+                </div>
+                {errors.weekdays && (
+                  <p className="mt-1 text-sm text-red-600">{errors.weekdays.message}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {inputMode === 'fixed_step' && type !== 'simple_habit' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Значение шага
             </label>
             <input
               type="number"
@@ -241,60 +433,6 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
             />
             {errors.stepValue && (
               <p className="mt-1 text-sm text-red-600">{errors.stepValue.message}</p>
-            )}
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Периодичность
-          </label>
-          <select {...register('periodicity')} className="input">
-            {periodicityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {periodicity === 'every_n_days' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Количество дней
-            </label>
-            <input
-              type="number"
-              {...register('nDays', { valueAsNumber: true })}
-              className="input"
-              min={1}
-            />
-            {errors.nDays && (
-              <p className="mt-1 text-sm text-red-600">{errors.nDays.message}</p>
-            )}
-          </div>
-        )}
-
-        {periodicity === 'weekdays' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Дни недели
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'].map((day, index) => (
-                <label key={index} className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    value={index}
-                    {...register('weekdays')}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm">{day}</span>
-                </label>
-              ))}
-            </div>
-            {errors.weekdays && (
-              <p className="mt-1 text-sm text-red-600">{errors.weekdays.message}</p>
             )}
           </div>
         )}
@@ -319,138 +457,7 @@ export function MetricForm({ initialData, onSubmit, onCancel }: MetricFormProps)
           </div>
         </div>
 
-        {/* Auto-Reset Settings */}
-        <div className="border-t pt-4 mt-4 space-y-3">
-          <h4 className="text-sm font-medium text-gray-900">Автоматический сброс</h4>
-          
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              {...register('autoResetEnabled')}
-              className="w-4 h-4 rounded border-gray-300"
-            />
-            <span className="text-sm text-gray-700">
-              Включить автоматический сброс значений
-            </span>
-          </label>
-          
-          {autoResetEnabled && (
-            <div className="space-y-3 pl-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Периодичность сброса
-                </label>
-                <select {...register('resetPeriodicity')} className="input">
-                  <option value="daily">Ежедневно</option>
-                  <option value="weekly">Еженедельно</option>
-                  <option value="monthly">Ежемесячно</option>
-                  <option value="yearly">Ежегодно</option>
-                </select>
-              </div>
-              
-              {resetPeriodicity === 'weekly' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    День недели сброса
-                  </label>
-                  <select {...register('resetDayOfWeek')} className="input">
-                    <option value={0}>Воскресенье</option>
-                    <option value={1}>Понедельник</option>
-                    <option value={2}>Вторник</option>
-                    <option value={3}>Среда</option>
-                    <option value={4}>Четверг</option>
-                    <option value={5}>Пятница</option>
-                    <option value={6}>Суббота</option>
-                  </select>
-                </div>
-              )}
-              
-              {resetPeriodicity === 'monthly' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    День месяца сброса
-                  </label>
-                  <input
-                    type="number"
-                    {...register('resetDayOfMonth', { valueAsNumber: true })}
-                    className="input"
-                    min={1}
-                    max={31}
-                    placeholder="1-31"
-                  />
-                </div>
-              )}
-              
-              {resetPeriodicity === 'yearly' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Месяц сброса
-                  </label>
-                  <select {...register('resetMonthOfYear')} className="input">
-                    <option value={1}>Январь</option>
-                    <option value={2}>Февраль</option>
-                    <option value={3}>Март</option>
-                    <option value={4}>Апрель</option>
-                    <option value={5}>Май</option>
-                    <option value={6}>Июнь</option>
-                    <option value={7}>Июль</option>
-                    <option value={8}>Август</option>
-                    <option value={9}>Сентябрь</option>
-                    <option value={10}>Октябрь</option>
-                    <option value={11}>Ноябрь</option>
-                    <option value={12}>Декабрь</option>
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Target Increase Settings */}
-        <div className="border-t pt-4 mt-4 space-y-3">
-          <h4 className="text-sm font-medium text-gray-900">Автоматическое увеличение цели</h4>
-          
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              {...register('targetIncreaseEnabled')}
-              className="w-4 h-4 rounded border-gray-300"
-            />
-            <span className="text-sm text-gray-700">
-              Автоматически увеличивать целевое значение
-            </span>
-          </label>
-          
-          {targetIncreaseEnabled && (
-            <div className="space-y-3 pl-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  На сколько увеличивать
-                </label>
-                <input
-                  type="number"
-                  {...register('targetIncreaseValue', { valueAsNumber: true })}
-                  className="input"
-                  min={0}
-                  step={0.1}
-                  placeholder="Например: 1"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Периодичность увеличения
-                </label>
-                <select {...register('targetIncreasePeriodicity')} className="input">
-                  <option value="daily">Ежедневно</option>
-                  <option value="weekly">Еженедельно</option>
-                  <option value="monthly">Ежемесячно</option>
-                  <option value="yearly">Ежегодно</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
+        <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
 
         <div className="flex gap-3 pt-4">
           <button type="button" onClick={onCancel} className="btn-secondary flex-1">

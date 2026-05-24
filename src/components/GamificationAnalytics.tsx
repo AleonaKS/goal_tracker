@@ -43,7 +43,7 @@ export function GamificationAnalytics() {
     return calculateGamificationAnalytics(
       taskData,
       user?.totalPoints || 0,
-      [] // Recent actions would come from a separate store/table
+      []  
     )
   }, [tasks, user?.totalPoints])
 
@@ -51,8 +51,7 @@ export function GamificationAnalytics() {
     calculateLevel(user?.totalPoints || 0),
     [user?.totalPoints]
   )
-
-  // Prepare chart data
+ 
   const sourceData = [
     { name: 'Задачи', value: analytics.pointsBySource.tasks, color: '#3b82f6' },
     { name: 'Цели', value: analytics.pointsBySource.goals, color: '#10b981' },

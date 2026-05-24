@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { calculateGoalProgressByMetric, shouldResetMetric, calculateExpectedCompletionDate, calculateCurrentStreak } from '@/lib/calculations'
-import { calculateGoalStatus, getDeadlineDate } from '@/lib/utils'
+import { calculateGoalStatus, getDeadlineDate, calculateMetricProgress } from '@/lib/utils'
 import { checkAchievements } from '@/lib/gamification'
 import { upsertMetricAnalytics } from '@/lib/api'
 import type { Goal, Metric, MetricEntry } from '@/types'
@@ -31,14 +31,13 @@ export function useAutoProgress() {
    */
   const calculateGoalProgress = useCallback((goal: Goal): number => {
     if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
-      // Progress by linked metric
+
       const metric = metrics.find(m => m.id === goal.progressMetricId)
       if (metric) {
         const entries = metricEntries.filter(e => e.metricId === metric.id)
         return calculateGoalProgressByMetric(metric, entries)
       }
-    } else {
-      // Progress by tasks (weighted)
+    } else { 
       const goalTasks = tasks.filter(t => t.goalId === goal.id)
       if (goalTasks.length === 0) return 0
       
@@ -108,13 +107,15 @@ export function useAutoProgress() {
       const shouldReset = shouldResetMetric(metric)
       
       if (shouldReset) {
-        // Reset metric progress to start value
+        const entries = metricEntries.filter(e => e.metricId === metric.id)
+        const values = calculateMetricProgress(metric, entries)
+        
         await updateMetric(metric.id, {
-          progress: 0,
+          progress: values.progress,
+          periodValue: values.isPeriodBased ? values.periodValue : undefined,
           lastResetAt: now
         })
         
-        // If target increase is enabled, update target
         if (metric.targetIncreaseEnabled && metric.targetIncreaseValue) {
           const increase = metric.targetIncreaseType === 'percentage'
             ? metric.targetValue * (metric.targetIncreaseValue / 100)
@@ -126,7 +127,7 @@ export function useAutoProgress() {
         }
       }
     }
-  }, [metrics, updateMetric])
+  }, [metrics, metricEntries, updateMetric])
 
   /**
    * Calculate metric statistics
@@ -134,22 +135,12 @@ export function useAutoProgress() {
   const calculateMetricStats = useCallback((metric: Metric, entries: MetricEntry[]) => {
     if (entries.length === 0) return null
     
-    const sortedEntries = [...entries].sort((a, b) => 
+    const values = calculateMetricProgress(metric, entries)
+    
+    const sortedEntries = [...entries].sort((a, b) =>
       new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime()
     )
     
-    // Calculate current value
-    const currentValue = entries.reduce(
-      (sum, e) => sum + (e.isAddition ? e.value : -e.value),
-      metric.startValue
-    )
-    
-    // Calculate progress percentage
-    const progress = metric.targetValue > 0 
-      ? Math.min(100, Math.round((currentValue / metric.targetValue) * 100))
-      : 0
-    
-    // Calculate streak
     let currentStreak = 0
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -166,7 +157,6 @@ export function useAutoProgress() {
       }
     }
     
-    // Calculate max streak
     let maxStreak = 0
     let tempStreak = 1
     
@@ -184,17 +174,16 @@ export function useAutoProgress() {
     }
     maxStreak = Math.max(maxStreak, tempStreak, currentStreak)
     
-    // Find record value
-    const recordValue = Math.max(...entries.map(e => e.value))
+    const recordValue = entries.length > 0 ? Math.max(...entries.map(e => e.value)) : 0
     
     return {
-      progress,
-      currentValue,
+      progress: values.progress,
+      currentValue: values.isPeriodBased ? values.periodValue : values.totalValue,
       currentStreak,
       maxStreak,
       recordValue,
       totalEntries: entries.length,
-      totalValue: entries.reduce((sum, e) => sum + e.value, 0)
+      totalValue: values.totalValue
     }
   }, [])
 
@@ -300,9 +289,7 @@ export function useAutoProgress() {
     }
   }, [user, goals, tasks, metrics, metricEntries, createAchievement])
 
-  /**
-   * Run all automatic calculations
-   */
+ 
   const runAutoCalculations = useCallback(async () => {
     await checkAndResetMetrics()
     await updateAllMetricsStats()
@@ -310,32 +297,37 @@ export function useAutoProgress() {
     await checkAndAwardAchievements()
   }, [checkAndResetMetrics, updateAllMetricsStats, updateAllGoalsProgress, checkAndAwardAchievements])
 
-  // Run calculations on mount and periodically
+  // Keep latest run function in ref so interval always uses current data
+  const runRef = useRef(runAutoCalculations)
+  runRef.current = runAutoCalculations
+
+  // Run calculations on mount (once user data is available) and periodically
   useEffect(() => {
-    // Prevent concurrent execution
     if (isRunningRef.current) return
-    
+
     const executeCalculations = async () => {
       isRunningRef.current = true
       try {
-        await runAutoCalculations()
+        await runRef.current()
       } finally {
         isRunningRef.current = false
       }
     }
-    
-    // Initial calculation
-    executeCalculations()
-    
+
+    // Initial calculation on mount
+    if (user) {
+      executeCalculations()
+    }
+
     // Set up interval for periodic checks (every 5 minutes)
     const interval = setInterval(() => {
       if (!isRunningRef.current) {
         executeCalculations()
       }
     }, 5 * 60 * 1000)
-    
+
     return () => clearInterval(interval)
-  }, [])
+  }, [user])
 
   return {
     calculateGoalProgress,

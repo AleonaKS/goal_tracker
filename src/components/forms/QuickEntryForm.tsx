@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Minus, Plus, X, Calendar, MessageSquare } from 'lucide-react'
 import { Modal } from '../Modal'
 import type { Metric, MetricEntry } from '@/types'
-import { formatDate } from '@/lib/utils'
+import { formatDate, calculateMetricProgress } from '@/lib/utils'
 
 interface QuickEntryFormProps {
   isOpen: boolean
@@ -26,14 +26,12 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0])
   const [entryTime, setEntryTime] = useState(new Date().toTimeString().slice(0, 5))
 
-  // Calculate current total
-  const currentTotal = useMemo(() => {
-    const startValue = metric.startValue || 0
-    const totalChange = entries.reduce((sum, e) => 
-      sum + (e.isAddition ? e.value : -e.value), 0
-    )
-    return startValue + totalChange
+  const metricProgress = useMemo(() => {
+    return calculateMetricProgress(metric, entries.filter(e => !e.id.startsWith('temp-')))
   }, [metric, entries])
+
+  const currentTotal = metricProgress.isPeriodBased ? metricProgress.periodValue : metricProgress.totalValue
+  const currentTotalAll = metricProgress.totalValue
 
   // Calculate final value based on input
   const inputNumber = parseFloat(inputValue) || 0
@@ -45,7 +43,7 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
     if (!inputValue || isNaN(parseFloat(inputValue))) return
 
     const dateTime = new Date(`${entryDate}T${entryTime}`)
-    
+
     onSave({
       value: inputNumber,
       finalValue,
@@ -53,12 +51,14 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
       entryDate: dateTime,
       isAddition: mode === 'add'
     })
-    
-    onClose()
-    // Reset form
+
+    // ИСПРАВЛЕНИЕ: Убрали onClose() чтобы окно не закрывалось
+    // Теперь можно быстро добавлять несколько значений подряд
+
+    // Reset form для следующего ввода
     setInputValue('')
     setNote('')
-    setMode('add')
+    // mode оставляем как есть для удобства
   }
 
   const remaining = Math.max(0, (metric.targetValue || 100) - finalValue)
@@ -71,14 +71,17 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
       className="max-w-md"
     >
       <div className="space-y-6">
-        {/* Current and Final Value Display */}
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
           <div className="text-center flex-1">
-            <p className="text-sm text-gray-500 mb-1">Текущее</p>
+            <p className="text-sm text-gray-500 mb-1">
+              {metricProgress.isPeriodBased ? 'За период' : 'Текущее'}
+            </p>
             <p className="text-2xl font-bold text-gray-900">
               {currentTotal.toFixed(1)}
             </p>
-            <p className="text-xs text-gray-400">{metric.customUnit || ''}</p>
+            {metricProgress.isPeriodBased && (
+              <p className="text-xs text-gray-400">всего: {currentTotalAll.toFixed(1)}</p>
+            )}
           </div>
           
           <div className="flex items-center px-4">
@@ -138,6 +141,38 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
             </span>
           </div>
           
+          {/* Quick step buttons */}
+          <div className="flex gap-2 mt-3 justify-center">
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-gray-600">Шаг:</span>
+              <button
+                onClick={() => {
+                  const currentValue = parseFloat(inputValue) || 0
+                  const step = metric.stepValue ?? 1
+                  const newValue = Math.max(0, currentValue - step)
+                  setInputValue(String(newValue))
+                }}
+                className="px-2 py-1 text-sm bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+              <span className="text-lg font-medium text-gray-700 px-2">
+                {parseFloat(inputValue) || 0}
+              </span>
+              <button
+                onClick={() => {
+                  const currentValue = parseFloat(inputValue) || 0
+                  const step = metric.stepValue ?? 1
+                  const newValue = currentValue + step
+                  setInputValue(String(newValue))
+                }}
+                className="px-2 py-1 text-sm bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          
           {/* Quick preset buttons */}
           <div className="flex gap-2 mt-3 justify-center">
             {[1, 5, 10, 25, 50, 100].map(preset => (
@@ -162,8 +197,11 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
             <div 
-              className="h-full bg-primary-500 rounded-full transition-all"
-              style={{ width: `${Math.min(100, (finalValue / (metric.targetValue || 100)) * 100)}%` }}
+              className="h-full rounded-full transition-all"
+              style={{ 
+                width: `${Math.min(100, (finalValue / (metric.targetValue || 100)) * 100)}%`,
+                backgroundColor: metric.color
+              }}
             />
           </div>
           <p className="text-xs text-gray-500 mt-2 text-center">

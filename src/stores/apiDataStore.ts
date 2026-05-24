@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import * as api from '@/lib/supabase-api'
 import { isDemoMode } from '@/lib/demo'
+import { calculateMetricProgress } from '@/lib/utils'
 import type { 
   Category, 
   Goal, 
@@ -32,6 +33,7 @@ interface ApiDataState {
   userAchievements: UserAchievement[]
   units: Unit[]
   favoriteFilters: FavoriteFilter[]
+  pointsHistory: any[]
   
   // Loading states
   isLoading: boolean
@@ -48,6 +50,7 @@ interface ApiDataState {
   fetchAchievements: () => Promise<void>
   fetchUserAchievements: () => Promise<void>
   fetchUnits: () => Promise<void>
+  fetchPointsHistory: () => Promise<void>
   fetchAll: () => Promise<void>
   
   // CRUD operations
@@ -79,6 +82,15 @@ interface ApiDataState {
   updateMetricEntry: (id: string, updates: Partial<MetricEntry>) => Promise<void>
   deleteMetricEntry: (id: string) => Promise<void>
   
+  // Optimistic updates
+  addOptimisticMetricEntry: (entry: MetricEntry) => void
+  removeOptimisticMetricEntry: (entryId: string) => void
+  
+  // Оптимистичные обновления
+  optimisticUpdateTask: (id: string, updates: Partial<Task>) => Promise<void>
+  optimisticUpdateMetric: (id: string, updates: Partial<Metric>) => Promise<void>
+  optimisticUpdateGoal: (id: string, updates: Partial<Goal>) => Promise<void>
+  
   createAchievement: (achievement: Omit<Achievement, 'id' | 'createdAt'>) => Promise<void>
   createUnit: (unit: Omit<Unit, 'id' | 'createdAt'>) => Promise<void>
   updateUnit: (id: string, updates: Partial<Unit>) => Promise<void>
@@ -100,6 +112,33 @@ interface ApiDataState {
   setUser: (user: User | null) => void
 }
 
+const DEMO_USER_ID = 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31'
+
+function getUserId(state: ApiDataState): string {
+  const id = state.user?.id || (isDemoMode() ? DEMO_USER_ID : null)
+  if (!id) throw new Error('User not authenticated')
+  return id
+}
+
+async function withAsync<T>(
+  set: (partial: Partial<ApiDataState> | ((state: ApiDataState) => Partial<ApiDataState>)) => void,
+  get: () => ApiDataState,
+  action: (userId: string) => Promise<T>,
+  onSuccess: (result: T) => void,
+  errorMsg: string
+): Promise<void> {
+  set({ isLoading: true, error: null })
+  try {
+    const uid = getUserId(get())
+    const result = await action(uid)
+    onSuccess(result)
+  } catch (error) {
+    set({ error: error instanceof Error ? error.message : errorMsg })
+  } finally {
+    set({ isLoading: false })
+  }
+}
+
 export const useApiDataStore = create<ApiDataState>((set, get) => ({
   // Initial state
   user: null,
@@ -114,603 +153,227 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
   userAchievements: [],
   units: [],
   favoriteFilters: [],
+  pointsHistory: [],
   isLoading: false,
   error: null,
   
   // Fetch methods
-  fetchCategories: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const categories = await api.getCategories(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedCategories = categories.map((category: any) => ({
-        ...category,
-        createdAt: category.created_at,
-        updatedAt: category.updated_at,
-        userId: category.user_id
-      }))
-      set({ categories: transformedCategories })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch categories' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchCategories: () => withAsync(set, get, (uid) => api.getCategories(uid), (data) => set({ categories: data.map((c: any) => ({ ...c, createdAt: c.created_at, updatedAt: c.updated_at, userId: c.user_id })) }), 'Failed to fetch categories'),
   
-  fetchGoals: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      console.log('fetchGoals - userId:', effectiveUserId, 'isDemo:', isDemoMode())
-      
-      const goals = await api.getGoals(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedGoals = goals.map((goal: any) => ({
-        ...goal,
-        createdAt: goal.created_at,
-        updatedAt: goal.updated_at,
-        userId: goal.user_id,
-        categoryId: goal.category_id,
-        parentGoalId: goal.parent_goal_id,
-        orderIndex: goal.order_index,
-        startDate: goal.start_date,
-        dueType: goal.due_type,
-        dueDate: goal.due_date,
-        dueMonthYear: goal.due_month_year,
-        dueYear: goal.due_year,
-        progressCalculation: goal.progress_calculation,
-        progressMetricId: goal.progress_metric_id,
-        completedAt: goal.completed_at,
-        expectedCompletionDate: goal.expected_completion_date,
-        isFrozen: goal.is_frozen,
-        frozenAt: goal.frozen_at,
-        autoCalculateStatus: goal.auto_calculate_status
-      }))
-      set({ goals: transformedGoals })
-    } catch (error) {
-      console.error('fetchGoals error:', error)
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch goals' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchGoals: () => withAsync(set, get, (uid) => api.getGoals(uid), (data) => set({ goals: data.map((g: any) => ({
+    ...g,
+    createdAt: g.created_at, updatedAt: g.updated_at, userId: g.user_id,
+    categoryId: g.category_id, orderIndex: g.order_index, startDate: g.start_date,
+    dueType: g.due_type, dueDate: g.due_date, dueMonthYear: g.due_month_year, dueYear: g.due_year,
+    progressCalculation: g.progress_calculation, progressMetricId: g.progress_metric_id,
+    completedAt: g.completed_at, expectedCompletionDate: g.expected_completion_date,
+    isFrozen: g.is_frozen, frozenAt: g.frozen_at, autoCalculateStatus: g.auto_calculate_status,
+    deadlineType: g.due_type || 'none',
+    deadlineValue: g.due_type === 'specific_date' ? g.due_date : g.due_type === 'month_year' ? g.due_month_year : g.due_type === 'year' ? g.due_year : undefined,
+  })) }), 'Failed to fetch goals'),
   
-  fetchStages: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const stages = await api.getStages(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedStages = stages.map((stage: any) => ({
-        ...stage,
-        createdAt: stage.created_at,
-        updatedAt: stage.updated_at,
-        userId: stage.user_id,
-        goalId: stage.goal_id,
-        orderIndex: stage.order_index,
-        startDate: stage.start_date,
-        dueDate: stage.due_date
-      }))
-      set({ stages: transformedStages })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch stages' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchStages: () => withAsync(set, get, (uid) => api.getStages(uid), (data) => set({ stages: data.map((s: any) => ({
+    ...s, createdAt: s.created_at, updatedAt: s.updated_at, userId: s.user_id,
+    goalId: s.goal_id, orderIndex: s.order_index, startDate: s.start_date, dueDate: s.due_date,
+  })) }), 'Failed to fetch stages'),
   
-  fetchTasks: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      console.log('fetchTasks - fetching for userId:', effectiveUserId)
-      const tasks = await api.getTasks(effectiveUserId)
-      console.log('fetchTasks - returned', tasks.length, 'tasks')
-      // Transform Supabase snake_case to camelCase
-      const transformedTasks = tasks.map((task: any) => ({
-        ...task,
-        createdAt: task.created_at,
-        updatedAt: task.updated_at,
-        userId: task.user_id,
-        categoryId: task.category_id,
-        goalId: task.goal_id,
-        stageId: task.stage_id,
-        parentTaskId: task.parent_task_id,
-        orderIndex: task.order_index,
-        startDate: task.start_date,
-        dueDate: task.due_date,
-        isPeriodBased: task.is_period_based,
-        completedAt: task.completed_at
-      }))
-      console.log('fetchTasks - transformed tasks, sample goalId:', transformedTasks[0]?.goalId)
-      set({ tasks: transformedTasks })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch tasks' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchTasks: () => withAsync(set, get, (uid) => api.getTasks(uid), (data) => set({ tasks: data.map((t: any) => ({
+    ...t, createdAt: t.created_at, updatedAt: t.updated_at, userId: t.user_id,
+    categoryId: t.category_id, goalId: t.goal_id, stageId: t.stage_id,
+    parentTaskId: t.parent_task_id, orderIndex: t.order_index,
+    startDate: t.start_date, dueDate: t.due_date,
+    isPeriodBased: t.is_period_based, completedAt: t.completed_at,
+    startTime: t.start_time, endTime: t.end_time,
+  })) }), 'Failed to fetch tasks'),
   
-  fetchMetrics: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const metrics = await api.getMetrics(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedMetrics = metrics.map((metric: any) => ({
-        ...metric,
-        createdAt: metric.created_at,
-        updatedAt: metric.updated_at,
-        userId: metric.user_id,
-        categoryId: metric.category_id,
-        goalId: metric.goal_id,
-        unitId: metric.unit_id,
-        inputMode: metric.input_mode,
-        stepValue: metric.step_value,
-        startValue: metric.start_value,
-        targetValue: metric.target_value,
-        autoResetEnabled: metric.auto_reset_enabled,
-        resetPeriodicity: metric.reset_periodicity,
-        resetWeekdays: metric.reset_weekdays,
-        resetDayOfMonth: metric.reset_day_of_month,
-        resetCustomDays: metric.reset_custom_days,
-        lastResetAt: metric.last_reset_at,
-        targetIncreaseEnabled: metric.target_increase_enabled,
-        targetIncreaseValue: metric.target_increase_value,
-        targetIncreaseType: metric.target_increase_type,
-        targetIncreasePeriodicity: metric.target_increase_periodicity
-      }))
-      set({ metrics: transformedMetrics })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch metrics' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchMetrics: () => withAsync(set, get, (uid) => api.getMetrics(uid), (data) => set({ metrics: data.map((m: any) => ({
+    ...m, createdAt: m.created_at, updatedAt: m.updated_at, userId: m.user_id,
+    categoryId: m.category_id, goalId: m.goal_id, unitId: m.unit_id,
+    inputMode: m.input_mode, stepValue: m.step_value,
+    startValue: m.start_value, targetValue: m.target_value,
+    totalValue: m.total_value, periodValue: m.period_value,
+    autoResetEnabled: m.auto_reset_enabled, resetPeriodicity: m.reset_periodicity,
+    resetWeekdays: m.reset_weekdays, resetDayOfMonth: m.reset_day_of_month,
+    resetCustomDays: m.reset_custom_days, lastResetAt: m.last_reset_at,
+    targetIncreaseEnabled: m.target_increase_enabled, targetIncreaseValue: m.target_increase_value,
+    targetIncreaseType: m.target_increase_type, targetIncreasePeriodicity: m.target_increase_periodicity,
+  })) }), 'Failed to fetch metrics'),
   
-  fetchAllMetricEntries: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const entries = await api.getAllMetricEntries(effectiveUserId)
-      set({ metricEntries: entries })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch metric entries' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchAllMetricEntries: () => withAsync(set, get, (uid) => api.getAllMetricEntries(uid), (data) => set({ metricEntries: data }), 'Failed to fetch metric entries'),
 
-  fetchMetricEntries: async (metricId: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      const entries = await api.getMetricEntries(metricId)
-      // Transform Supabase snake_case to camelCase
-      const transformedEntries = entries.map((entry: any) => ({
-        ...entry,
-        createdAt: entry.created_at,
-        entryDate: entry.entry_date,
-        finalValue: entry.final_value,
-        isAddition: entry.is_addition,
-        isOverachievement: entry.is_overachievement,
-        overachievementValue: entry.overachievement_value
-      }))
-      set({ metricEntries: transformedEntries })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch metric entries' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchMetricEntries: (metricId) => withAsync(set, get, () => api.getMetricEntries(metricId), (data) => {
+    const transformed = data.map((e: any) => ({ ...e, createdAt: e.created_at, finalValue: e.final_value, isAddition: e.is_addition, isOverachievement: e.is_overachievement, overachievementValue: e.overachievement_value }))
+    set(state => ({ metricEntries: [...state.metricEntries.filter(e => e.metricId !== metricId), ...transformed] }))
+  }, 'Failed to fetch metric entries'),
   
-  fetchAchievements: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const achievements = await api.getAchievements(effectiveUserId)
-      set({ achievements })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch achievements' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchAchievements: () => withAsync(set, get, (uid) => api.getAchievements(uid), (data) => set({ achievements: data }), 'Failed to fetch achievements'),
   
-  fetchUserAchievements: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const achievements = await api.getUserAchievements(effectiveUserId)
-      set({ userAchievements: achievements })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch user achievements' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchUserAchievements: () => withAsync(set, get, (uid) => api.getUserAchievements(uid), (data) => set({ userAchievements: data }), 'Failed to fetch user achievements'),
   
-  fetchUnits: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const units = await api.getUnits()
-      // Transform Supabase snake_case to camelCase
-      const transformedUnits = units.map((unit: any) => ({
-        ...unit,
-        createdAt: unit.created_at
-      }))
-      set({ units: transformedUnits })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch units' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchPointsHistory: () => withAsync(set, get, (uid) => api.getPointsHistory(uid), (data) => set({ pointsHistory: data }), 'Failed to fetch points history'),
+  
+  fetchUnits: () => withAsync(set, get, () => api.getUnits(), (data) => set({ units: data.map((u: any) => ({ ...u, createdAt: u.created_at })) }), 'Failed to fetch units'),
   
   fetchAll: async () => {
-    console.log('fetchAll - starting')
-    const { 
-      fetchCategories, 
-      fetchGoals, 
-      fetchStages, 
-      fetchTasks, 
-      fetchMetrics,
-      fetchAllMetricEntries
-    } = get()
-    
-    await Promise.all([
-      fetchCategories(),
-      fetchGoals(),
-      fetchStages(),
-      fetchTasks(),
-      fetchMetrics(),
-      fetchAllMetricEntries()
-    ])
-    console.log('fetchAll - completed')
+    const { fetchCategories, fetchGoals, fetchStages, fetchTasks, fetchMetrics, fetchAllMetricEntries, fetchUserAchievements, fetchAchievements, fetchPointsHistory } = get()
+    await Promise.all([fetchCategories(), fetchGoals(), fetchStages(), fetchTasks(), fetchMetrics(), fetchAllMetricEntries(), fetchUserAchievements(), fetchAchievements(), fetchPointsHistory()])
   },
   
   // CRUD operations
-  createCategory: async (category: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newCategory = await api.createCategory(category)
-      set(state => ({
-        categories: [...state.categories, newCategory]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create category' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createCategory: (category) => withAsync(set, get, () => api.createCategory(category), (newCat) => set(state => ({ categories: [...state.categories, newCat] })), 'Failed to create category'),
   
-  updateCategory: async (id: string, updates: Partial<Category>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedCategory = await api.updateCategory(id, updates)
-      // Transform snake_case to camelCase (API returns snake_case from DB)
-      const rawCategory = updatedCategory as any
-      const transformedCategory: Category = {
-        ...rawCategory,
-        createdAt: rawCategory.created_at ? new Date(rawCategory.created_at) : rawCategory.createdAt,
-        updatedAt: rawCategory.updated_at ? new Date(rawCategory.updated_at) : rawCategory.updatedAt,
-        userId: rawCategory.user_id || rawCategory.userId,
-        isDefault: rawCategory.is_default ?? rawCategory.isDefault ?? false,
-        orderIndex: rawCategory.order_index ?? rawCategory.orderIndex ?? 0,
-        goalCount: rawCategory.goal_count ?? rawCategory.goalCount ?? 0,
-        taskCount: rawCategory.task_count ?? rawCategory.taskCount ?? 0,
-      }
-      set(state => ({
-        categories: state.categories.map(cat => cat.id === id ? transformedCategory : cat)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update category' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateCategory: (id, updates) => withAsync(set, get, () => api.updateCategory(id, updates), (data) => {
+    const raw = data as any
+    set(state => ({
+      categories: state.categories.map(cat => cat.id === id ? {
+        ...raw, createdAt: raw.created_at ? new Date(raw.created_at) : raw.createdAt,
+        updatedAt: raw.updated_at ? new Date(raw.updated_at) : raw.updatedAt,
+        userId: raw.user_id || raw.userId, isDefault: raw.is_default ?? raw.isDefault ?? false,
+        orderIndex: raw.order_index ?? raw.orderIndex ?? 0,
+        goalCount: raw.goal_count ?? raw.goalCount ?? 0, taskCount: raw.task_count ?? raw.taskCount ?? 0,
+      } : cat)
+    }))
+  }, 'Failed to update category'),
   
-  deleteCategory: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteCategory(id)
-      set(state => ({
-        categories: state.categories.filter(cat => cat.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete category' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteCategory: (id) => withAsync(set, get, () => api.deleteCategory(id), () => set(state => ({ categories: state.categories.filter(cat => cat.id !== id) })), 'Failed to delete category'),
   
-  createGoal: async (goal: any) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newGoal = await api.createGoal(goal)
-      set(state => ({
-        goals: [...state.goals, newGoal]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create goal' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createGoal: (goal) => withAsync(set, get, () => api.createGoal(goal), (newGoal) => set(state => ({ goals: [...state.goals, newGoal] })), 'Failed to create goal'),
   
-  updateGoal: async (id: string, updates: Partial<Goal>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedGoal = await api.updateGoal(id, updates)
-      // Transform snake_case to camelCase (API returns snake_case from DB)
-      const rawGoal = updatedGoal as any
-      const transformedGoal: Goal = {
-        ...rawGoal,
-        createdAt: rawGoal.created_at ? new Date(rawGoal.created_at) : rawGoal.createdAt,
-        updatedAt: rawGoal.updated_at ? new Date(rawGoal.updated_at) : rawGoal.updatedAt,
-        userId: rawGoal.user_id || rawGoal.userId,
-        categoryId: rawGoal.category_id || rawGoal.categoryId,
-        parentGoalId: rawGoal.parent_goal_id || rawGoal.parentGoalId,
-        orderIndex: rawGoal.order_index ?? rawGoal.orderIndex ?? 0,
-        startDate: rawGoal.start_date ? new Date(rawGoal.start_date) : rawGoal.startDate,
-        dueType: rawGoal.due_type || rawGoal.dueType,
-        dueDate: rawGoal.due_date ? new Date(rawGoal.due_date) : rawGoal.dueDate,
-        dueMonthYear: rawGoal.due_month_year || rawGoal.dueMonthYear,
-        dueYear: rawGoal.due_year || rawGoal.dueYear,
-        progressCalculation: rawGoal.progress_calculation || rawGoal.progressCalculation,
-        progressMetricId: rawGoal.progress_metric_id || rawGoal.progressMetricId,
-        completedAt: rawGoal.completed_at ? new Date(rawGoal.completed_at) : rawGoal.completedAt,
-        expectedCompletionDate: rawGoal.expected_completion_date ? new Date(rawGoal.expected_completion_date) : rawGoal.expectedCompletionDate,
-        isFrozen: rawGoal.is_frozen ?? rawGoal.isFrozen ?? false,
-        frozenAt: rawGoal.frozen_at ? new Date(rawGoal.frozen_at) : rawGoal.frozenAt,
-        autoCalculateStatus: rawGoal.auto_calculate_status ?? rawGoal.autoCalculateStatus ?? true,
-        // Explicitly map fields that could be lost in transformation
-        priority: rawGoal.priority ?? rawGoal.priority ?? 3,
-        progress: rawGoal.progress ?? rawGoal.progress ?? 0,
-        status: rawGoal.status || rawGoal.status || 'in_progress',
-      }
-      set(state => ({
-        goals: state.goals.map(goal => goal.id === id ? transformedGoal : goal)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update goal' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateGoal: (id, updates) => withAsync(set, get, () => api.updateGoal(id, updates), (data) => {
+    const raw = data as any
+    set(state => ({
+      goals: state.goals.map(goal => goal.id === id ? {
+        ...raw, createdAt: raw.created_at ? new Date(raw.created_at) : raw.createdAt,
+        updatedAt: raw.updated_at ? new Date(raw.updated_at) : raw.updatedAt,
+        userId: raw.user_id || raw.userId, categoryId: raw.category_id || raw.categoryId,
+        orderIndex: raw.order_index ?? raw.orderIndex ?? 0,
+        startDate: raw.start_date ? new Date(raw.start_date) : raw.startDate,
+        dueType: raw.due_type || raw.dueType, dueDate: raw.due_date ? new Date(raw.due_date) : raw.dueDate,
+        dueMonthYear: raw.due_month_year || raw.dueMonthYear, dueYear: raw.due_year || raw.dueYear,
+        progressCalculation: raw.progress_calculation || raw.progressCalculation,
+        progressMetricId: raw.progress_metric_id || raw.progressMetricId,
+        completedAt: raw.completed_at ? new Date(raw.completed_at) : raw.completedAt,
+        expectedCompletionDate: raw.expected_completion_date ? new Date(raw.expected_completion_date) : raw.expectedCompletionDate,
+        isFrozen: raw.is_frozen ?? raw.isFrozen ?? false, frozenAt: raw.frozen_at ? new Date(raw.frozen_at) : raw.frozenAt,
+        autoCalculateStatus: raw.auto_calculate_status ?? raw.autoCalculateStatus ?? true,
+        priority: raw.priority ?? raw.priority ?? 3, progress: raw.progress ?? raw.progress ?? 0,
+        status: raw.status || raw.status || 'in_progress',
+        deadlineType: raw.due_type || raw.deadlineType || 'none',
+        deadlineValue: raw.due_type === 'specific_date' ? raw.due_date : raw.due_type === 'month_year' ? raw.due_month_year : raw.due_type === 'year' ? raw.due_year : raw.deadlineValue,
+      } : goal)
+    }))
+  }, 'Failed to update goal'),
   
-  deleteGoal: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteGoal(id)
-      set(state => ({
-        goals: state.goals.filter(goal => goal.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete goal' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteGoal: (id) => withAsync(set, get, () => api.deleteGoal(id), () => set(state => ({ goals: state.goals.filter(goal => goal.id !== id) })), 'Failed to delete goal'),
   
-  createTask: async (task: any) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newTask = await api.createTask(task)
-      set(state => ({
-        tasks: [...state.tasks, newTask]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create task' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createTask: (task) => withAsync(set, get, () => api.createTask(task), (newTask) => set(state => ({ tasks: [...state.tasks, newTask] })), 'Failed to create task'),
   
-  updateTask: async (id: string, updates: Partial<Task>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedTask = await api.updateTask(id, updates)
-      // Transform snake_case to camelCase (API returns snake_case from DB)
-      const rawTask = updatedTask as any
-      const transformedTask: Task = {
-        ...rawTask,
-        createdAt: rawTask.created_at ? new Date(rawTask.created_at) : rawTask.createdAt,
-        updatedAt: rawTask.updated_at ? new Date(rawTask.updated_at) : rawTask.updatedAt,
-        userId: rawTask.user_id || rawTask.userId,
-        categoryId: rawTask.category_id || rawTask.categoryId,
-        goalId: rawTask.goal_id || rawTask.goalId,
-        stageId: rawTask.stage_id || rawTask.stageId,
-        parentTaskId: rawTask.parent_task_id || rawTask.parentTaskId,
-        orderIndex: rawTask.order_index ?? rawTask.orderIndex ?? 0,
-        startDate: rawTask.start_date ? new Date(rawTask.start_date) : rawTask.startDate,
-        dueDate: rawTask.due_date ? new Date(rawTask.due_date) : rawTask.dueDate,
-        isPeriodBased: rawTask.is_period_based ?? rawTask.isPeriodBased ?? false,
-        completedAt: rawTask.completed_at ? new Date(rawTask.completed_at) : rawTask.completedAt,
-        // Explicitly map fields that could be lost in transformation
-        complexity: rawTask.complexity ?? rawTask.complexity ?? 3,
-        weight: rawTask.weight ?? rawTask.weight ?? 1,
-        priority: rawTask.priority ?? rawTask.priority ?? 3,
-        progress: rawTask.progress ?? rawTask.progress ?? 0,
-        completed: rawTask.completed ?? rawTask.completed ?? false,
-      }
-      set(state => ({
-        tasks: state.tasks.map(task => task.id === id ? transformedTask : task)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update task' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateTask: (id, updates) => withAsync(set, get, () => api.updateTask(id, updates), (data) => {
+    const raw = data as any
+    set(state => ({
+      tasks: state.tasks.map(task => task.id === id ? {
+        ...raw, createdAt: raw.created_at ? new Date(raw.created_at) : raw.createdAt,
+        updatedAt: raw.updated_at ? new Date(raw.updated_at) : raw.updatedAt,
+        userId: raw.user_id || raw.userId, categoryId: raw.category_id || raw.categoryId,
+        goalId: raw.goal_id || raw.goalId, stageId: raw.stage_id || raw.stageId,
+        parentTaskId: raw.parent_task_id || raw.parentTaskId,
+        orderIndex: raw.order_index ?? raw.orderIndex ?? 0,
+        startDate: raw.start_date ? new Date(raw.start_date) : raw.startDate,
+        dueDate: raw.due_date ? new Date(raw.due_date) : raw.dueDate,
+        isPeriodBased: raw.is_period_based ?? raw.isPeriodBased ?? false,
+        completedAt: raw.completed_at ? new Date(raw.completed_at) : raw.completedAt,
+        complexity: raw.complexity ?? raw.complexity ?? 3, weight: raw.weight ?? raw.weight ?? 1,
+        priority: raw.priority ?? raw.priority ?? 3, progress: raw.progress ?? raw.progress ?? 0,
+        completed: raw.completed ?? raw.completed ?? false,
+        startTime: raw.start_time || raw.startTime, endTime: raw.end_time || raw.endTime,
+        duration: raw.duration ?? raw.duration, description: raw.description ?? raw.description,
+      } : task)
+    }))
+  }, 'Failed to update task'),
   
-  deleteTask: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteTask(id)
-      set(state => ({
-        tasks: state.tasks.filter(task => task.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete task' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteTask: (id) => withAsync(set, get, () => api.deleteTask(id), () => set(state => ({ tasks: state.tasks.filter(task => task.id !== id) })), 'Failed to delete task'),
   
-  createStage: async (stage: any) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newStage = await api.createStage(stage)
-      set(state => ({
-        stages: [...state.stages, newStage]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create stage' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createStage: (stage) => withAsync(set, get, () => api.createStage(stage), (newStage) => set(state => ({ stages: [...state.stages, newStage] })), 'Failed to create stage'),
   
-  updateStage: async (id: string, updates: Partial<Stage>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedStage = await api.updateStage(id, updates)
-      // Transform snake_case to camelCase (API returns snake_case from DB)
-      const rawStage = updatedStage as any
-      const transformedStage: Stage = {
-        ...rawStage,
-        createdAt: rawStage.created_at ? new Date(rawStage.created_at) : rawStage.createdAt,
-        updatedAt: rawStage.updated_at ? new Date(rawStage.updated_at) : rawStage.updatedAt,
-        userId: rawStage.user_id || rawStage.userId,
-        goalId: rawStage.goal_id || rawStage.goalId,
-        orderIndex: rawStage.order_index ?? rawStage.orderIndex ?? 0,
-        startDate: rawStage.start_date ? new Date(rawStage.start_date) : rawStage.startDate,
-        dueDate: rawStage.due_date ? new Date(rawStage.due_date) : rawStage.dueDate,
-      }
-      set(state => ({
-        stages: state.stages.map(stage => stage.id === id ? transformedStage : stage)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update stage' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateStage: (id, updates) => withAsync(set, get, () => api.updateStage(id, updates), (data) => {
+    const raw = data as any
+    set(state => ({
+      stages: state.stages.map(stage => stage.id === id ? {
+        ...raw, createdAt: raw.created_at ? new Date(raw.created_at) : raw.createdAt,
+        updatedAt: raw.updated_at ? new Date(raw.updated_at) : raw.updatedAt,
+        userId: raw.user_id || raw.userId, goalId: raw.goal_id || raw.goalId,
+        orderIndex: raw.order_index ?? raw.orderIndex ?? 0,
+        startDate: raw.start_date ? new Date(raw.start_date) : raw.startDate,
+        dueDate: raw.due_date ? new Date(raw.due_date) : raw.dueDate,
+      } : stage)
+    }))
+  }, 'Failed to update stage'),
   
-  deleteStage: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteStage(id)
-      set(state => ({
-        stages: state.stages.filter(stage => stage.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete stage' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteStage: (id) => withAsync(set, get, () => api.deleteStage(id), () => set(state => ({ stages: state.stages.filter(stage => stage.id !== id) })), 'Failed to delete stage'),
   
-  createMetric: async (metric: any) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newMetric = await api.createMetric(metric)
-      set(state => ({
-        metrics: [...state.metrics, newMetric]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create metric' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createMetric: (metric) => withAsync(set, get, () => api.createMetric(metric), (newMetric) => set(state => ({ metrics: [...state.metrics, newMetric] })), 'Failed to create metric'),
   
-  updateMetric: async (id: string, updates: Partial<Metric>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedMetric = await api.updateMetric(id, updates)
-      // Transform snake_case to camelCase (API returns snake_case from DB)
-      const rawMetric = updatedMetric as any
-      const transformedMetric: Metric = {
-        ...rawMetric,
-        createdAt: rawMetric.created_at ? new Date(rawMetric.created_at) : rawMetric.createdAt,
-        updatedAt: rawMetric.updated_at ? new Date(rawMetric.updated_at) : rawMetric.updatedAt,
-        userId: rawMetric.user_id || rawMetric.userId,
-        categoryId: rawMetric.category_id || rawMetric.categoryId,
-        goalId: rawMetric.goal_id || rawMetric.goalId,
-        unitId: rawMetric.unit_id || rawMetric.unitId,
-        inputMode: rawMetric.input_mode || rawMetric.inputMode,
-        stepValue: rawMetric.step_value ?? rawMetric.stepValue,
-        startValue: rawMetric.start_value ?? rawMetric.startValue ?? 0,
-        targetValue: rawMetric.target_value ?? rawMetric.targetValue ?? 0,
-        autoResetEnabled: rawMetric.auto_reset_enabled ?? rawMetric.autoResetEnabled ?? false,
-        resetPeriodicity: rawMetric.reset_periodicity || rawMetric.resetPeriodicity,
-        resetWeekdays: rawMetric.reset_weekdays || rawMetric.resetWeekdays,
-        resetDayOfMonth: rawMetric.reset_day_of_month ?? rawMetric.resetDayOfMonth,
-        resetCustomDays: rawMetric.reset_custom_days ?? rawMetric.resetCustomDays,
-        lastResetAt: rawMetric.last_reset_at ? new Date(rawMetric.last_reset_at) : rawMetric.lastResetAt,
-        targetIncreaseEnabled: rawMetric.target_increase_enabled ?? rawMetric.targetIncreaseEnabled ?? false,
-        targetIncreaseValue: rawMetric.target_increase_value ?? rawMetric.targetIncreaseValue,
-        targetIncreaseType: rawMetric.target_increase_type || rawMetric.targetIncreaseType,
-        targetIncreasePeriodicity: rawMetric.target_increase_periodicity || rawMetric.targetIncreasePeriodicity,
-      }
-      set(state => ({
-        metrics: state.metrics.map(metric => metric.id === id ? transformedMetric : metric)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update metric' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateMetric: (id, updates) => withAsync(set, get, () => api.updateMetric(id, updates), (data) => {
+    const raw = data as any
+    set(state => ({
+      metrics: state.metrics.map(metric => metric.id === id ? {
+        ...raw, createdAt: raw.created_at ? new Date(raw.created_at) : raw.createdAt,
+        updatedAt: raw.updated_at ? new Date(raw.updated_at) : raw.updatedAt,
+        userId: raw.user_id || raw.userId, categoryId: raw.category_id || raw.categoryId,
+        goalId: raw.goal_id || raw.goalId, unitId: raw.unit_id || raw.unitId,
+        inputMode: raw.input_mode || raw.inputMode, stepValue: raw.step_value ?? raw.stepValue,
+        startValue: raw.start_value ?? raw.startValue ?? 0,
+        targetValue: raw.target_value ?? raw.targetValue ?? 0,
+        totalValue: raw.total_value ?? raw.totalValue,
+        periodValue: raw.period_value ?? raw.periodValue,
+        customUnit: raw.custom_unit || raw.customUnit,
+        autoResetEnabled: raw.auto_reset_enabled ?? raw.autoResetEnabled ?? false,
+        resetPeriodicity: raw.reset_periodicity || raw.resetPeriodicity,
+        resetWeekdays: raw.reset_weekdays || raw.resetWeekdays,
+        resetDayOfMonth: raw.reset_day_of_month ?? raw.resetDayOfMonth,
+        resetCustomDays: raw.reset_custom_days ?? raw.resetCustomDays,
+        lastResetAt: raw.last_reset_at ? new Date(raw.last_reset_at) : raw.lastResetAt,
+        targetIncreaseEnabled: raw.target_increase_enabled ?? raw.targetIncreaseEnabled ?? false,
+        targetIncreaseValue: raw.target_increase_value ?? raw.targetIncreaseValue,
+        targetIncreaseType: raw.target_increase_type || raw.targetIncreaseType,
+        targetIncreasePeriodicity: raw.target_increase_periodicity || raw.targetIncreasePeriodicity,
+      } : metric)
+    }))
+  }, 'Failed to update metric'),
   
-  deleteMetric: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteMetric(id)
-      set(state => ({
-        metrics: state.metrics.filter(metric => metric.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete metric' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteMetric: (id) => withAsync(set, get, () => api.deleteMetric(id), () => set(state => ({ metrics: state.metrics.filter(metric => metric.id !== id) })), 'Failed to delete metric'),
   
   createMetricEntry: async (entry: any) => {
     try {
       set({ isLoading: true, error: null })
       const newEntry = await api.createMetricEntry(entry)
       // Add the new entry to state immediately
-      set(state => ({
-        metricEntries: [...state.metricEntries, newEntry]
-      }))
+      set(state => {
+        const updatedEntries = [...state.metricEntries, newEntry]
+
+        const metric = state.metrics.find(m => m.id === entry.metricId)
+        if (!metric) {
+          return { metricEntries: updatedEntries }
+        }
+
+        const metricEntries = updatedEntries.filter(e => e.metricId === entry.metricId && !e.id.startsWith('temp-'))
+        const values = calculateMetricProgress(metric, metricEntries)
+
+        return {
+          metricEntries: updatedEntries,
+          metrics: state.metrics.map(m =>
+            m.id === entry.metricId
+              ? {
+                  ...m,
+                  totalValue: values.totalValue,
+                  periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                  progress: values.progress
+                }
+              : m
+          )
+        }
+      })
+
       return newEntry
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create metric entry'
@@ -721,27 +384,149 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
     }
   },
   
+  // Optimistic updates
+  addOptimisticMetricEntry: (entry: MetricEntry) => {
+    // Добавляем запись в локальное состояние и пересчитываем значения метрики
+    set(state => {
+      const updatedEntries = [...state.metricEntries, entry]
+
+      const metric = state.metrics.find(m => m.id === entry.metricId)
+      if (!metric) {
+        return { metricEntries: updatedEntries }
+      }
+
+      const metricEntries = updatedEntries.filter(e => e.metricId === entry.metricId)
+      const values = calculateMetricProgress(metric, metricEntries)
+
+      return {
+        metricEntries: updatedEntries,
+        metrics: state.metrics.map(m =>
+          m.id === entry.metricId
+            ? {
+                ...m,
+                totalValue: values.totalValue,
+                periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                progress: values.progress
+              }
+            : m
+        )
+      }
+    })
+  },
+  
+  removeOptimisticMetricEntry: (entryId: string) => {
+    // Удаляем оптимистичную запись из локального состояния
+    set(state => {
+      const entryToRemove = state.metricEntries.find(e => e.id === entryId)
+      if (!entryToRemove) return state
+
+      const updatedEntries = state.metricEntries.filter(e => e.id !== entryId)
+
+      // Пересчитываем значения метрики на основе оставшихся записей
+      const metric = state.metrics.find(m => m.id === entryToRemove.metricId)
+      if (!metric) {
+        return { metricEntries: updatedEntries }
+      }
+
+      const metricEntries = updatedEntries.filter(e => e.metricId === entryToRemove.metricId && !e.id.startsWith('temp-'))
+      const values = calculateMetricProgress(metric, metricEntries)
+
+      return {
+        metricEntries: updatedEntries,
+        metrics: state.metrics.map(m =>
+          m.id === entryToRemove.metricId
+            ? {
+                ...m,
+                totalValue: values.totalValue,
+                periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                progress: values.progress
+              }
+            : m
+        )
+      }
+    })
+  },
+
   updateMetricEntry: async (id: string, updates: Partial<MetricEntry>) => {
     try {
       set({ isLoading: true, error: null })
+
+      const oldEntry = get().metricEntries.find(e => e.id === id)
       const updatedEntry = await api.updateMetricEntry(id, updates)
-      set(state => ({
-        metricEntries: state.metricEntries.map(entry => entry.id === id ? updatedEntry : entry)
-      }))
+
+      set(state => {
+        const updatedEntries = state.metricEntries.map(entry => entry.id === id ? updatedEntry : entry)
+
+        if (oldEntry && updates.value !== undefined && updates.value !== oldEntry.value) {
+          const metric = state.metrics.find(m => m.id === oldEntry.metricId)
+          if (!metric) {
+            return { metricEntries: updatedEntries }
+          }
+
+          const metricEntries = updatedEntries.filter(e => e.metricId === oldEntry.metricId && !e.id.startsWith('temp-'))
+          const values = calculateMetricProgress(metric, metricEntries)
+
+          return {
+            metricEntries: updatedEntries,
+            metrics: state.metrics.map(m =>
+              m.id === oldEntry.metricId
+                ? {
+                    ...m,
+                    totalValue: values.totalValue,
+                    periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                    progress: values.progress
+                  }
+                : m
+            )
+          }
+        }
+
+        return { metricEntries: updatedEntries }
+      })
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to update metric entry' })
     } finally {
       set({ isLoading: false })
     }
   },
-  
+
   deleteMetricEntry: async (id: string) => {
     try {
       set({ isLoading: true, error: null })
+
+      const entryToRemove = get().metricEntries.find(e => e.id === id)
+      if (!entryToRemove) {
+        await api.deleteMetricEntry(id)
+        return
+      }
+
       await api.deleteMetricEntry(id)
-      set(state => ({
-        metricEntries: state.metricEntries.filter(entry => entry.id !== id)
-      }))
+
+      set(state => {
+        const updatedEntries = state.metricEntries.filter(entry => entry.id !== id)
+
+        const metric = state.metrics.find(m => m.id === entryToRemove.metricId)
+        if (!metric) {
+          return { metricEntries: updatedEntries }
+        }
+
+        const metricEntries = updatedEntries.filter(e => e.metricId === entryToRemove.metricId && !e.id.startsWith('temp-'))
+        const values = calculateMetricProgress(metric, metricEntries)
+
+        return {
+          metricEntries: updatedEntries,
+          metrics: state.metrics.map(m =>
+            m.id === entryToRemove.metricId
+              ? {
+                  ...m,
+                  totalValue: values.totalValue,
+                  periodValue: values.isPeriodBased ? values.periodValue : undefined,
+                  progress: values.progress
+                }
+              : m
+          )
+        }
+      })
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete metric entry' })
     } finally {
@@ -749,94 +534,15 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
     }
   },
 
-  createAchievement: async (achievement: Omit<Achievement, 'id' | 'createdAt'>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newAchievement = await api.createAchievement(achievement)
-      set(state => ({
-        achievements: [...state.achievements, newAchievement]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create achievement' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createAchievement: (achievement) => withAsync(set, get, () => api.createAchievement(achievement), (newAchievement) => set(state => ({ achievements: [...state.achievements, newAchievement] })), 'Failed to create achievement'),
   
-  fetchSubtasks: async () => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const subtasks = await api.getSubtasks(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedSubtasks = subtasks.map((subtask: any) => ({
-        ...subtask,
-        createdAt: subtask.created_at,
-        updatedAt: subtask.updated_at,
-        userId: subtask.user_id,
-        taskId: subtask.task_id,
-        orderIndex: subtask.order_index,
-        isCompleted: subtask.is_completed
-      }))
-      set({ subtasks: transformedSubtasks })
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch subtasks' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  fetchSubtasks: () => withAsync(set, get, (uid) => api.getSubtasks(uid), (data) => set({ subtasks: data.map((s: any) => ({ ...s, createdAt: s.created_at, updatedAt: s.updated_at, userId: s.user_id, taskId: s.task_id, orderIndex: s.order_index, isCompleted: s.is_completed })) }), 'Failed to fetch subtasks'),
   
-  createSubtask: async (subtask: any) => {
-    try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const newSubtask = await api.createSubtask({
-        ...subtask,
-        userId: effectiveUserId
-      })
-      set(state => ({
-        subtasks: [...state.subtasks, newSubtask]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create subtask' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  createSubtask: (subtask) => withAsync(set, get, (uid) => api.createSubtask({ ...subtask, userId: uid }), (newSubtask) => set(state => ({ subtasks: [...state.subtasks, newSubtask] })), 'Failed to create subtask'),
   
-  updateSubtask: async (id: string, updates: Partial<Subtask>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedSubtask = await api.updateSubtask(id, updates)
-      set(state => ({
-        subtasks: state.subtasks.map(subtask => subtask.id === id ? updatedSubtask : subtask)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update subtask' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  updateSubtask: (id, updates) => withAsync(set, get, () => api.updateSubtask(id, updates), (data) => set(state => ({ subtasks: state.subtasks.map(s => s.id === id ? data : s) })), 'Failed to update subtask'),
   
-  deleteSubtask: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteSubtask(id)
-      set(state => ({
-        subtasks: state.subtasks.filter(subtask => subtask.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete subtask' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
+  deleteSubtask: (id) => withAsync(set, get, () => api.deleteSubtask(id), () => set(state => ({ subtasks: state.subtasks.filter(subtask => subtask.id !== id) })), 'Failed to delete subtask'),
   
   getDashboardStats: async () => {
     try {
@@ -913,7 +619,6 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
         updatedAt: goal.updated_at ? new Date(goal.updated_at) : goal.updatedAt,
         userId: goal.user_id || goal.userId,
         categoryId: goal.category_id || goal.categoryId,
-        parentGoalId: goal.parent_goal_id || goal.parentGoalId,
         orderIndex: goal.order_index ?? goal.orderIndex ?? 0,
         startDate: goal.start_date ? new Date(goal.start_date) : goal.startDate,
         dueType: goal.due_type || goal.dueType,
@@ -1021,128 +726,93 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
     })
   },
   
-  fetchFavoriteFilters: async () => {
+  fetchFavoriteFilters: () => withAsync(set, get, (uid) => api.getFavoriteFilters(uid), (data) => set({ favoriteFilters: data.map((f: any) => ({ ...f, createdAt: f.created_at, updatedAt: f.updated_at, userId: f.user_id, filterType: f.filter_type, filterValue: f.filter_value, sortBy: f.sort_by, sortOrder: f.sort_order })) }), 'Failed to fetch favorite filters'),
+  
+  createFavoriteFilter: (filter) => withAsync(set, get, (uid) => api.createFavoriteFilter({ user_id: uid, name: filter.name, filter_type: filter.filterType, filter_value: filter.filterValue, sort_by: filter.sortBy, sort_order: filter.sortOrder } as any), (newFilter) => set(state => ({ favoriteFilters: [...state.favoriteFilters, newFilter] })), 'Failed to create favorite filter'),
+  
+  updateFavoriteFilter: (id, updates) => withAsync(set, get, () => api.updateFavoriteFilter(id, updates), (data) => set(state => ({ favoriteFilters: state.favoriteFilters.map(f => f.id === id ? data : f) })), 'Failed to update favorite filter'),
+  
+  deleteFavoriteFilter: (id) => withAsync(set, get, () => api.deleteFavoriteFilter(id), () => set(state => ({ favoriteFilters: state.favoriteFilters.filter(f => f.id !== id) })), 'Failed to delete favorite filter'),
+  
+  createUnit: (unit) => withAsync(set, get, () => api.createUnit(unit), (newUnit) => set(state => ({ units: [...state.units, newUnit] })), 'Failed to create unit'),
+  
+  updateUnit: (id, updates) => withAsync(set, get, () => api.updateUnit(id, updates), (data) => set(state => ({ units: state.units.map(u => u.id === id ? data : u) })), 'Failed to update unit'),
+  
+  deleteUnit: (id) => withAsync(set, get, () => api.deleteUnit(id), () => set(state => ({ units: state.units.filter(u => u.id !== id) })), 'Failed to delete unit'),
+  
+  // Оптимистичные обновления
+  optimisticUpdateTask: async (id: string, updates: Partial<Task>) => {
+    const task = get().tasks.find(t => t.id === id)
+    if (!task) return
+    
+    // Сохраняем старое состояние для отката
+    const oldTask = { ...task }
+    
+    // Оптимистичное обновление
+    set(state => ({
+      tasks: state.tasks.map(t => 
+        t.id === id ? { ...t, ...updates } : t
+      )
+    }))
+    
     try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      const filters = await api.getFavoriteFilters(effectiveUserId)
-      // Transform Supabase snake_case to camelCase
-      const transformedFilters = filters.map((filter: any) => ({
-        ...filter,
-        createdAt: filter.created_at,
-        updatedAt: filter.updated_at,
-        userId: filter.user_id,
-        filterType: filter.filter_type,
-        filterValue: filter.filter_value,
-        sortBy: filter.sort_by,
-        sortOrder: filter.sort_order
-      }))
-      set({ favoriteFilters: transformedFilters })
+      await api.updateTask(id, updates)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch favorite filters' })
-    } finally {
-      set({ isLoading: false })
+      // Откат при ошибке
+      set(state => ({
+        tasks: state.tasks.map(t => 
+          t.id === id ? oldTask : t
+        )
+      }))
+      throw error
     }
   },
-  
-  createFavoriteFilter: async (filter: Omit<FavoriteFilter, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+
+  optimisticUpdateMetric: async (id: string, updates: Partial<Metric>) => {
+    const metric = get().metrics.find(m => m.id === id)
+    if (!metric) return
+    
+    const oldMetric = { ...metric }
+    
+    set(state => ({
+      metrics: state.metrics.map(m => 
+        m.id === id ? { ...m, ...updates } : m
+      )
+    }))
+    
     try {
-      set({ isLoading: true, error: null })
-      const storeUserId = get().user?.id
-      const effectiveUserId = storeUserId || (isDemoMode() ? 'ee6724eb-d38f-4e62-ba73-b6cd272b5f31' : null)
-      if (!effectiveUserId) throw new Error('User not authenticated')
-      
-      // Transform to match database schema (snake_case)
-      const dbFilter = {
-        user_id: effectiveUserId,
-        name: filter.name,
-        filter_type: filter.filterType,
-        filter_value: filter.filterValue,
-        sort_by: filter.sortBy,
-        sort_order: filter.sortOrder
-      }
-      
-      const newFilter = await api.createFavoriteFilter(dbFilter as any)
-      set(state => ({
-        favoriteFilters: [...state.favoriteFilters, newFilter]
-      }))
+      await api.updateMetric(id, updates)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create favorite filter' })
-    } finally {
-      set({ isLoading: false })
+      set(state => ({
+        metrics: state.metrics.map(m => 
+          m.id === id ? oldMetric : m
+        )
+      }))
+      throw error
     }
   },
-  
-  updateFavoriteFilter: async (id: string, updates: Partial<FavoriteFilter>) => {
+
+  optimisticUpdateGoal: async (id: string, updates: Partial<Goal>) => {
+    const goal = get().goals.find(g => g.id === id)
+    if (!goal) return
+    
+    const oldGoal = { ...goal }
+    
+    set(state => ({
+      goals: state.goals.map(g => 
+        g.id === id ? { ...g, ...updates } : g
+      )
+    }))
+    
     try {
-      set({ isLoading: true, error: null })
-      const updatedFilter = await api.updateFavoriteFilter(id, updates)
-      set(state => ({
-        favoriteFilters: state.favoriteFilters.map(filter => filter.id === id ? updatedFilter : filter)
-      }))
+      await api.updateGoal(id, updates)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update favorite filter' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
-  
-  deleteFavoriteFilter: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteFavoriteFilter(id)
       set(state => ({
-        favoriteFilters: state.favoriteFilters.filter(filter => filter.id !== id)
+        goals: state.goals.map(g => 
+          g.id === id ? oldGoal : g
+        )
       }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete favorite filter' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
-  
-  createUnit: async (unit: Omit<Unit, 'id' | 'createdAt'>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const newUnit = await api.createUnit(unit)
-      set(state => ({
-        units: [...state.units, newUnit]
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to create unit' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
-  
-  updateUnit: async (id: string, updates: Partial<Unit>) => {
-    try {
-      set({ isLoading: true, error: null })
-      const updatedUnit = await api.updateUnit(id, updates)
-      set(state => ({
-        units: state.units.map(unit => unit.id === id ? updatedUnit : unit)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to update unit' })
-    } finally {
-      set({ isLoading: false })
-    }
-  },
-  
-  deleteUnit: async (id: string) => {
-    try {
-      set({ isLoading: true, error: null })
-      await api.deleteUnit(id)
-      set(state => ({
-        units: state.units.filter(unit => unit.id !== id)
-      }))
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to delete unit' })
-    } finally {
-      set({ isLoading: false })
+      throw error
     }
   },
   

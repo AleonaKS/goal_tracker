@@ -5,6 +5,8 @@ import { Target, Eye, EyeOff, UserPlus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { z } from 'zod'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 const registerSchema = z.object({
   login: z.string().min(3, 'Логин должен быть не менее 3 символов').max(20, 'Максимум 20 символов'),
@@ -44,6 +46,8 @@ export function RegisterPage() {
     },
   })
 
+  const { errorMessage, clearError: clearFieldError } = useFieldErrorModal(errors)
+
   const onSubmit = async (data: RegisterFormData) => {
     clearError()
     try {
@@ -68,7 +72,7 @@ export function RegisterPage() {
         <div className="card">
           <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Регистрация</h2>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <div>
               <label htmlFor="login" className="block text-sm font-medium text-gray-700 mb-1">
                 Логин
@@ -165,6 +169,7 @@ export function RegisterPage() {
               <UserPlus className="w-5 h-5" />
               {isLoading ? 'Registering...' : 'Register'}
             </button>
+            <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearFieldError} />
           </form>
 
           <div className="mt-6 text-center">

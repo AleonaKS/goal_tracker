@@ -320,7 +320,6 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     ...goal,
     id: generateNewId(goal.id),
     userId: currentUserId,
-    parentGoalId: goal.parentGoalId ? generateNewId(goal.parentGoalId) : undefined,
     categoryId: goal.categoryId ? generateNewId(goal.categoryId) : undefined
   }))
   

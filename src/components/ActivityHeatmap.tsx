@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Info } from 'lucide-react'
 
@@ -16,6 +16,8 @@ interface ActivityHeatmapProps {
   showControls?: boolean
   className?: string
   onDayClick?: (date: Date, value: number) => void
+  color?: string // Добавляем цвет для кастомизации
+  scrollToCurrentMonth?: boolean
 }
 
 type HeatmapSize = 'small' | 'medium' | 'large'
@@ -26,18 +28,27 @@ const SIZE_CONFIGS = {
   large: { cell: 14, gap: 3, fontSize: 12 }
 } as const
 
-const MONTH_LABELS = ['дек.', 'янв.', 'февр.', 'март', 'апр.', 'май', 'июнь', 'июль', 'авг.', 'сен.', 'окт.', 'ноя.']
+const MONTH_LABELS = ['янв.', 'февр.', 'март', 'апр.', 'май', 'июнь', 'июль', 'авг.', 'сен.', 'окт.', 'ноя.', 'дек.']
 const WEEK_DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-// Color scale for different intensity levels - using progressive darker shades
-const INTENSITY_COLORS = [
-  '#ebedf0',  // 0 - no activity (gray background)
-  '#dcfce7',  // 1 - very light (light green)
-  '#86efac',  // 2 - light (green-300)
-  '#4ade80',  // 3 - medium (green-400)
-  '#22c55e',  // 4 - high (green-500)
-  '#16a34a'   // 5 - maximum (green-600)
-]
+// Generate intensity colors based on metric color
+const generateIntensityColors = (baseColor: string): string[] => {
+  // Convert hex to RGB
+  const hex = baseColor.replace('#', '')
+  const r = parseInt(hex.substr(0, 2), 16)
+  const g = parseInt(hex.substr(2, 2), 16)
+  const b = parseInt(hex.substr(4, 2), 16)
+  
+  // Generate 5 intensity levels from light to dark
+  return [
+    '#ebedf0', // 0 - no activity (gray background)
+    `rgba(${r}, ${g}, ${b}, 0.2)`, // 1 - very light
+    `rgba(${r}, ${g}, ${b}, 0.4)`, // 2 - light
+    `rgba(${r}, ${g}, ${b}, 0.6)`, // 3 - medium
+    `rgba(${r}, ${g}, ${b}, 0.8)`, // 4 - high
+    baseColor // 5 - maximum (full color)
+  ]
+}
 
 export function ActivityHeatmap({ 
   data, 
@@ -47,11 +58,17 @@ export function ActivityHeatmap({
   size = 'medium',
   showControls = false,
   className = '',
-  onDayClick
+  onDayClick,
+  color = '#22c55e', // Default green color
+  scrollToCurrentMonth = false
 }: ActivityHeatmapProps) {
   const [hoveredDay, setHoveredDay] = useState<{date: Date, value: number} | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   
   const config = SIZE_CONFIGS[size]
+  
+  // Generate intensity colors based on the metric color
+  const INTENSITY_COLORS = useMemo(() => generateIntensityColors(color), [color])
 
   // Generate last 52 weeks of data (GitHub style) - right to left
   const heatmapData = useMemo(() => {
@@ -133,27 +150,18 @@ export function ActivityHeatmap({
       }
     }
     
-    // Select only ~6 evenly spaced months like in the screenshot
+    // Show all 12 months
     const monthLabels: Array<{label: string, position: number}> = []
-    const totalWeeks = 53
-    const numLabels = 6
-    const weekInterval = Math.floor(totalWeeks / numLabels)
     
-    for (let i = 0; i < numLabels; i++) {
-      const targetWeek = i * weekInterval
-      // Find closest month to this position
-      const closestMonth = allMonths.reduce((prev, curr) => 
-        Math.abs(curr.weekIndex - targetWeek) < Math.abs(prev.weekIndex - targetWeek) ? curr : prev
-      )
-      
-      // Avoid duplicates
-      if (!monthLabels.find(m => m.label === closestMonth.label)) {
+    // Use all unique months from the data
+    allMonths.forEach(month => {
+      if (!monthLabels.find(m => m.label === month.label)) {
         monthLabels.push({
-          label: closestMonth.label,
-          position: closestMonth.weekIndex * (config.cell + config.gap)
+          label: month.label,
+          position: month.weekIndex * (config.cell + config.gap)
         })
       }
-    }
+    })
     
     return { weeks, monthLabels, maxValue }
   }, [data, config])
@@ -166,6 +174,15 @@ export function ActivityHeatmap({
     return heatmapData.weeks.flat().reduce((sum, d) => sum + d.value, 0)
   }, [heatmapData])
 
+  // Scroll to current month on mount
+  useEffect(() => {
+    if (!scrollToCurrentMonth || !scrollRef.current) return
+    const lastMonth = heatmapData.monthLabels[heatmapData.monthLabels.length - 1]
+    if (lastMonth) {
+      scrollRef.current.scrollLeft = Math.max(0, lastMonth.position - 20)
+    }
+  }, [scrollToCurrentMonth, heatmapData.monthLabels])
+
   return (
     <div className={`w-full ${className}`}>
       {showTitle && (
@@ -174,30 +191,11 @@ export function ActivityHeatmap({
         </div>
       )}
       
-      {/* Month Labels Row - Fixed positioning */}
-      <div 
-        className="flex ml-8 mb-1 relative" 
-        style={{ 
-          fontSize: `${config.fontSize}px`,
-          height: `${config.fontSize + 4}px`
-        }}
-      >
-        {heatmapData.monthLabels.map((month, i) => (
-          <span
-            key={i}
-            className="text-gray-500 absolute whitespace-nowrap"
-            style={{
-              left: `${month.position}px`,
-            }}
-          >
-            {month.label}
-          </span>
-        ))}
-      </div>
-      
       <div className="flex">
-        {/* Day Labels */}
+        {/* Day Labels - Fixed Position */}
         <div className="flex flex-col mr-2" style={{ gap: `${config.gap}px` }}>
+          {/* Month Labels placeholder for alignment */}
+          <div style={{ height: `${config.fontSize + 4}px` }}></div>
           {WEEK_DAY_LABELS.map((day, i) => (
             <div
               key={day}
@@ -207,43 +205,70 @@ export function ActivityHeatmap({
                 fontSize: `${config.fontSize}px`
               }}
             >
-              {i % 2 === 1 ? day : ''}
+              {day}
             </div>
           ))}
         </div>
         
-        {/* Contribution Grid */}
-        <div className="flex" style={{ gap: `${config.gap}px` }}>
-          {heatmapData.weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="flex flex-col" style={{ gap: `${config.gap}px` }}>
-              {week.map((day, dayIndex) => (
-                <div
-                  key={`${weekIndex}-${dayIndex}`}
-                  className="rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-gray-400"
+        {/* Scrollable Content with Month Labels */}
+        <div ref={scrollRef} className="overflow-x-auto flex-1">
+          <div className="min-w-max">
+            {/* Month Labels Row - Scrollable */}
+            <div 
+              className="flex mb-1 relative" 
+              style={{ 
+                fontSize: `${config.fontSize}px`,
+                height: `${config.fontSize + 4}px`,
+                minWidth: `${heatmapData.weeks.length * (config.cell + config.gap)}px`
+              }}
+            >
+              {heatmapData.monthLabels.map((month, i) => (
+                <span
+                  key={i}
+                  className="text-gray-500 whitespace-nowrap absolute"
                   style={{
-                    width: `${config.cell}px`,
-                    height: `${config.cell}px`,
-                    backgroundColor: INTENSITY_COLORS[day.intensity]
+                    left: `${month.position}px`,
                   }}
-                  title={`${format(day.date, 'MMM d, yyyy')}: ${day.value}`}
-                  onClick={() => onDayClick?.(day.date, day.value)}
-                  onMouseEnter={() => setHoveredDay(day)}
-                  onMouseLeave={() => setHoveredDay(null)}
-                />
+                >
+                  {month.label}
+                </span>
               ))}
             </div>
-          ))}
+            
+            {/* Contribution Grid */}
+            <div className="flex" style={{ gap: `${config.gap}px` }}>
+              {heatmapData.weeks.map((week, weekIndex) => (
+                <div key={weekIndex} className="flex flex-col" style={{ gap: `${config.gap}px` }}>
+                  {week.map((day, dayIndex) => (
+                    <div
+                      key={`${weekIndex}-${dayIndex}`}
+                      className="rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-gray-400"
+                      style={{
+                        width: `${config.cell}px`,
+                        height: `${config.cell}px`,
+                        backgroundColor: INTENSITY_COLORS[day.intensity]
+                      }}
+                      title={`${format(day.date, 'MMM d, yyyy')}: ${day.value}`}
+                      onClick={() => onDayClick?.(day.date, day.value)}
+                      onMouseEnter={() => setHoveredDay(day)}
+                      onMouseLeave={() => setHoveredDay(null)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
       
       {/* Stats & Legend */}
       <div className="flex items-center justify-between mt-4">
         <div className="text-sm text-gray-600">
-          <span className="font-medium">{totalDays}</span> active days • Total: <span className="font-medium">{totalValue}</span>
+          <span className="font-medium">{totalDays}</span> активных дней • Всего: <span className="font-medium">{totalValue}</span>
         </div>
-        
+
         <div className="flex items-center gap-2" style={{ fontSize: `${config.fontSize}px` }}>
-          <span className="text-gray-500">Less</span>
+          <span className="text-gray-500">Меньше</span>
           <div className="flex" style={{ gap: '3px' }}>
             {INTENSITY_COLORS.map((color, i) => (
               <div
@@ -257,7 +282,7 @@ export function ActivityHeatmap({
               />
             ))}
           </div>
-          <span className="text-gray-500">More</span>
+          <span className="text-gray-500">Больше</span>
         </div>
       </div>
       

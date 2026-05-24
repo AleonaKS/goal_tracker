@@ -1,4 +1,4 @@
-import { getUserById, updateUserGamificationStats, createUserAchievement } from './supabase-api'
+import { getUserById, updateUserGamificationStats, createUserAchievement, getUserAchievements, addPointsHistoryEntry, getPointsHistory } from './supabase-api'
 
 // Points configuration
 export const POINTS_CONFIG = {
@@ -31,6 +31,7 @@ export const POINTS_CONFIG = {
   FIRST_GOAL: 25,
   FIRST_TASK: 15,
   FIRST_METRIC: 15,
+  ACHIEVEMENT_UNLOCKED: 0,
   WEEKLY_REPORT_VIEW: 5,
 } as const
 
@@ -51,7 +52,7 @@ export const DEFAULT_ACHIEVEMENTS = [
 // Level thresholds
 export const LEVEL_THRESHOLDS = [
   { level: 1, points: 0, title: 'Новичок' },
-  { level: 2, points: 50, title: 'Стартёр' },
+  { level: 2, points: 50, title: 'Стажёр' },
   { level: 3, points: 150, title: 'Организатор' },
   { level: 4, points: 300, title: 'Мотивированный' },
   { level: 5, points: 500, title: 'Продуктивный' },
@@ -110,9 +111,11 @@ export async function awardPoints(
 ): Promise<{ success: boolean; pointsAwarded: number; newTotal: number; leveledUp?: boolean }> {
   try {
     const points = POINTS_CONFIG[actionType]
+    console.log(`[Gamification] awardPoints called: ${actionType}, points from config: ${points}`)
     
     // Get current user stats
     const user = await getUserById(userId)
+    console.log(`[Gamification] getUserById returned:`, user?.totalPoints)
     if (!user) {
       throw new Error('User not found')
     }
@@ -125,10 +128,31 @@ export async function awardPoints(
     const newLevel = calculateLevel(newTotal)
     const leveledUp = newLevel.level > oldLevel.level
 
-    // Update user points
-    await updateUserGamificationStats(userId, { totalPoints: newTotal })
-
-    // Log the action (optional - could be stored in a separate table)
+    // Update user's total points in database
+    console.log(`[Gamification] Checking if should update DB: points=${points}, currentPoints=${currentPoints}, newTotal=${newTotal}`)
+    if (points > 0) {
+      console.log(`[Gamification] Updating DB with newTotal: ${newTotal}`)
+      await updateUserGamificationStats(userId, { totalPoints: newTotal })
+      console.log(`[Gamification] DB update completed`)
+    } else {
+      console.log(`[Gamification] Skipping DB update because points <= 0`)
+    }
+    
+    // Add to points history
+    console.log('[Gamification] Adding to points history:', {
+      userId,
+      action: `${actionType}: ${metadata?.goalId || metadata?.taskId || metadata?.metricId || ''}`,
+      points,
+      date: new Date().toISOString()
+    })
+    
+    await addPointsHistoryEntry(userId, {
+      action: `${actionType}: ${metadata?.goalId || metadata?.taskId || metadata?.metricId || ''}`,
+      points: points,
+      date: new Date().toISOString()
+    })
+    
+    // Log the action
     console.log(`[Gamification] User ${userId} earned ${points} points for ${actionType}`, metadata)
 
     return { success: true, pointsAwarded: points, newTotal, leveledUp }
@@ -150,9 +174,14 @@ export async function checkAchievements(userId: string, stats: {
   activeDays: number
 }): Promise<UserAchievement[]> {
   const newAchievements: UserAchievement[] = []
+   
+  const existingAchievements = await getUserAchievements(userId)
+  const unlockedIds = new Set(existingAchievements.map(a => a.achievementId))
   
   for (const achievement of DEFAULT_ACHIEVEMENTS) {
     if (!achievement.condition) continue
+     
+    if (unlockedIds.has(achievement.id)) continue
     
     let shouldAward = false
     
@@ -187,22 +216,30 @@ export async function checkAchievements(userId: string, stats: {
         unlockedAt: new Date(),
         isCustom: false
       })
-      
-      // Award bonus points for achievement
+       
+      try {
+        await createUserAchievement({
+          userId,
+          achievementId: achievement.id,
+          pointsAwarded: achievement.points
+        })
+        console.log(`[Gamification] Saved achievement ${achievement.id} to database`)
+      } catch (err) {
+        console.error('[Gamification] Failed to save achievement:', err)
+      }
+       
       await awardPoints(userId, 'ACHIEVEMENT_UNLOCKED' as any, { achievementId: achievement.id })
     }
   }
   
   return newAchievements
 }
-
-// Create custom achievement
+ 
 export async function createCustomAchievement(
   userId: string,
   achievement: Omit<UserAchievement, 'id' | 'unlockedAt' | 'isCustom'>
 ): Promise<UserAchievement | null> {
-  try {
-    // Store custom achievement in database
+  try { 
     const achievementData = await createUserAchievement({
       userId,
       achievementId: `custom_${Date.now()}`,
@@ -223,17 +260,14 @@ export async function createCustomAchievement(
   }
 }
 
-// ============================================================================
-// ADVANCED TASK SCORING SYSTEM
-// ============================================================================
 
 export interface TaskScoringParams {
-  complexity: number      // 1-5 scale
-  weight: number          // 1-10 scale
-  priority: number        // 1-5 scale (1 = highest)
+  complexity: number       
+  weight: number        
+  priority: number       
   dueDate?: Date
   completedAt?: Date
-  basePoints?: number     // Base points for task completion
+  basePoints?: number    
 }
 
 export interface TaskScoreResult {
@@ -241,8 +275,8 @@ export interface TaskScoreResult {
   complexityBonus: number
   weightBonus: number
   priorityBonus: number
-  deadlineBonus: number      // Early completion bonus
-  deadlinePenalty: number    // Overdue penalty
+  deadlineBonus: number      
+  deadlinePenalty: number  
   totalPoints: number
   breakdown: {
     complexity: { input: number; multiplier: number; points: number }
@@ -251,27 +285,12 @@ export interface TaskScoreResult {
     deadline: { daysDiff: number; coefficient: number; points: number }
   }
 }
-
-/**
- * Calculate task completion points based on complexity, weight, priority and deadline
- * 
- * Formula:
- * - Base: 10 points
- * - Complexity: complexity * 2 points (2-10 bonus)
- * - Weight: weight * 1.5 points (1.5-15 bonus)
- * - Priority: (6 - priority) * 3 points → priority 1 = 15 pts, priority 5 = 3 pts
- * - Deadline:
- *   * Early: +20% per day (max +100%)
- *   * On time: 0
- *   * Late: -10% per day (max -50%)
- */
+ 
 export function calculateTaskScore(params: TaskScoringParams): TaskScoreResult {
   const { complexity, weight, priority, dueDate, completedAt, basePoints = 10 } = params
-  
-  // Inverse priority (priority 1 = 5 points multiplier, priority 5 = 1)
+   
   const inversePriority = 6 - priority
-  
-  // Calculate bonuses
+   
   const complexityBonus = complexity * 2
   const weightBonus = Math.round(weight * 1.5)
   const priorityBonus = inversePriority * 3
@@ -280,31 +299,26 @@ export function calculateTaskScore(params: TaskScoringParams): TaskScoreResult {
   let deadlinePenalty = 0
   let deadlineCoefficient = 1
   let daysDiff = 0
-  
-  // Calculate deadline factor
+   
   if (dueDate && completedAt) {
     const due = new Date(dueDate)
-    const completed = new Date(completedAt)
-    
-    // Reset times to compare dates only
+    const completed = new Date(completedAt) 
+
     due.setHours(0, 0, 0, 0)
     completed.setHours(0, 0, 0, 0)
     
     daysDiff = Math.floor((completed.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
     
-    if (daysDiff < 0) {
-      // Early completion: +20% per day, max +100%
+    if (daysDiff < 0) { 
       const earlyDays = Math.abs(daysDiff)
       const bonusPercent = Math.min(earlyDays * 0.2, 1.0)
       deadlineBonus = Math.round(basePoints * bonusPercent)
       deadlineCoefficient = 1 + bonusPercent
-    } else if (daysDiff > 0) {
-      // Late: -10% per day, max -50%
+    } else if (daysDiff > 0) { 
       const penaltyPercent = Math.min(daysDiff * 0.1, 0.5)
       deadlinePenalty = Math.round(basePoints * penaltyPercent)
       deadlineCoefficient = 1 - penaltyPercent
-    }
-    // On time: no change
+    } 
   }
   
   const subtotal = basePoints + complexityBonus + weightBonus + priorityBonus
@@ -326,10 +340,7 @@ export function calculateTaskScore(params: TaskScoringParams): TaskScoreResult {
     }
   }
 }
-
-/**
- * Award points for task completion with full scoring breakdown
- */
+ 
 export async function awardTaskCompletionPoints(
   userId: string,
   taskParams: TaskScoringParams
@@ -346,11 +357,7 @@ export async function awardTaskCompletionPoints(
     score
   }
 }
-
-// ============================================================================
-// GAMIFICATION ANALYTICS
-// ============================================================================
-
+ 
 export interface GamificationAnalytics {
   totalPoints: number
   pointsThisWeek: number

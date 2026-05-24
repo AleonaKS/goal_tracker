@@ -5,6 +5,8 @@ import { Target, Eye, EyeOff } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { loginSchema, type LoginFormData } from '@/lib/validation'
+import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
+import { FieldErrorModal } from '@/components/FieldErrorModal'
 
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
@@ -22,6 +24,8 @@ export function LoginPage() {
       password: '1234as',
     },
   })
+
+  const { errorMessage, clearError } = useFieldErrorModal(errors)
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -46,7 +50,7 @@ export function LoginPage() {
         <div className="card">
           <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Вход в систему</h2>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email
@@ -101,6 +105,7 @@ export function LoginPage() {
             >
               {isLoading ? 'Загрузка...' : 'Войти'}
             </button>
+            <FieldErrorModal isOpen={!!errorMessage} message={errorMessage || ''} onClose={clearError} />
           </form>
 
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">

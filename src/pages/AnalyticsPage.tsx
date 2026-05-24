@@ -1,18 +1,33 @@
 import { useState, useMemo } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
+import { useAuthStore } from '@/stores/authStore'
 import {
   Target, CheckCircle, Clock,
-  Activity, Layers, Zap
+  Activity, Layers, Zap, Trophy, Star, Award, History
 } from 'lucide-react'
 import { MetricAnalyticsModal } from '@/components/MetricAnalyticsModal'
 import { SkillsRadarChart, MetricRadarChart, AnalysisRadarChart } from '@/components/RadarChart'
 import { CategoryDetailModal } from '@/components/CategoryDetailModal'
+import { cn } from '@/lib/utils'
+import { DEFAULT_ACHIEVEMENTS } from '@/lib/gamification'
+import { GamificationAnalytics } from '@/components/GamificationAnalytics'
+import { ToastContainer } from '@/components/Toast'
+import { useToastStore } from '@/stores/toastStore'
 import type { Metric, Category } from '@/types'
 
 export function AnalyticsPage() {
-  const { goals, tasks, metrics, categories, metricEntries } = useApiDataStore()
+  const { goals, tasks, metrics, categories, metricEntries, userAchievements, pointsHistory } = useApiDataStore()
+  const { user } = useAuthStore()
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
+  const { toasts, removeToast } = useToastStore()
+
+  const achievements = DEFAULT_ACHIEVEMENTS
+
+  const gamification = useMemo(() => {
+    const g = user?.settings?.gamification
+    return typeof g === 'boolean' ? g : (g?.enabled ?? true)
+  }, [user?.settings?.gamification])
 
   const analyticsData = useMemo(() => {
     const completedGoals = goals.filter(g => g.status === 'completed')
@@ -111,33 +126,174 @@ export function AnalyticsPage() {
       </div>
 
       {/* Radar Charts */}
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 min-[1680px]:grid-cols-3 gap-6">
         <div className="bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
-            <Target className="w-5 h-5 text-blue-600" />
-            Skills Analysis by Categories
+          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Target className="w-4 h-4 text-blue-600" />
+            Прогресс по категориям
           </h3>
           <SkillsRadarChart className="w-full" />
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-purple-600" />
-            Multi-Dimensional Performance Analysis
+          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Zap className="w-4 h-4 text-purple-600" />
+            Многомерный анализ
           </h3>
           <AnalysisRadarChart className="w-full" />
         </div>
 
         {metrics.length > 0 && (
           <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-green-600" />
-              Metrics Progress Overview
+            <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-green-600" />
+              Обзор метрик
             </h3>
             <MetricRadarChart className="w-full" />
           </div>
         )}
       </div>
+
+      {/* Gamification Stats */}
+      <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Trophy className="w-6 h-6 text-yellow-500" />
+          <h2 className="text-lg font-semibold text-gray-900">Ваш прогресс</h2>
+        </div>
+        
+        {gamification ? (
+          <div className="space-y-6">
+            {/* Points Overview */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-yellow-50 to-amber-50 p-4 rounded-xl border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Star className="w-5 h-5 text-yellow-600" />
+                  <span className="text-sm font-medium text-gray-600">Очки</span>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{user?.totalPoints || 0}</p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl border border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-5 h-5 text-purple-600" />
+                  <span className="text-sm font-medium text-gray-600">Уровень</span>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{user?.level || 1}</p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="w-5 h-5 text-green-600" />
+                  <span className="text-sm font-medium text-gray-600">Целей</span>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{goals.filter(g => g.status === 'completed').length}/{goals.length}</p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-4 rounded-xl border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="w-5 h-5 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-600">Задач</span>
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{tasks.filter(t => t.completed).length}/{tasks.length}</p>
+              </div>
+            </div>
+            
+            {/* Points History */}
+            <div className="border-t pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <History className="w-5 h-5 text-gray-500" />
+                <h3 className="font-medium text-gray-900">История начисления очков</h3>
+              </div>
+              
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {pointsHistory && pointsHistory.filter(item => item.points > 0).length > 0 ? (
+                  pointsHistory
+                    .filter(item => item.points > 0)
+                    .map((item, i) => {
+                      let actionName = item.action
+                      if (actionName.includes('HABIT_ENTRY:')) {
+                        actionName = 'Выполнена привычка'
+                      } else if (actionName.includes('METRIC_ENTRY:')) {
+                        actionName = 'Запись в метрике'
+                      } else if (actionName.includes('ACHIEVEMENT_UNLOCKED')) {
+                        actionName = 'Разблокировано достижение'
+                      }
+                      
+                      return (
+                        <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white rounded-lg shadow-sm">
+                              <Star className="w-4 h-4 text-yellow-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{actionName}</p>
+                              <p className="text-xs text-gray-500">{item.date}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 text-sm font-medium text-yellow-700">
+                            <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
+                            +{item.points}
+                          </div>
+                        </div>
+                      )
+                    })
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    История очков пока пуста. Выполняйте задачи и достигайте цели!
+                  </p>
+                )}
+              </div>
+            </div>
+            
+            {/* Achievements */}
+            <div className="border-t pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Award className="w-5 h-5 text-amber-500" />
+                <h3 className="font-medium text-gray-900">Достижения</h3>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {achievements.length > 0 ? (
+                  achievements.map((ach) => {
+                    const isUnlocked = userAchievements.some(ua => ua.achievementId === ach.id)
+                    return (
+                      <div 
+                        key={ach.id} 
+                        title={ach.description}
+                        className={`p-3 rounded-xl border text-center cursor-help transition-all ${
+                          isUnlocked 
+                            ? 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-300 shadow-md' 
+                            : 'bg-gray-50 border-gray-200 opacity-60 hover:opacity-80'
+                        }`}
+                      >
+                        <span className="text-3xl">{ach.icon}</span>
+                        <p className="text-sm font-medium text-gray-900 mt-1">{ach.title}</p>
+                        <p className="text-xs text-gray-500">{ach.points} очков</p>
+                        {isUnlocked ? (
+                          <p className="text-xs text-green-600 mt-1 font-medium">✓ Получено</p>
+                        ) : (
+                          <p className="text-xs text-gray-400 mt-1">{ach.description}</p>
+                        )}
+                      </div>
+                    )
+                  })
+                ) : (
+                  <p className="text-sm text-gray-500 text-center col-span-4 py-4">
+                    Достижения появятся по мере прогресса в приложении
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-500 text-center py-4">
+            Геймификация отключена. Включите её в настройках.
+          </p>
+        )}
+      </div>
+
+      {/* Gamification Analytics Charts */}
+      {gamification && <GamificationAnalytics />}
 
       {selectedMetric && (
         <MetricAnalyticsModal
@@ -155,6 +311,8 @@ export function AnalyticsPage() {
           initialCategory={selectedCategory}
         />
       )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

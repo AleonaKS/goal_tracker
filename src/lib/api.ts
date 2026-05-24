@@ -206,7 +206,7 @@ export async function getMetricAnalytics(userId: string): Promise<MetricAnalytic
       targetValue: metric.targetValue,
       progress: Math.min(progress, 100),
       entriesCount: entries.length,
-      lastEntry: entries[0]?.timestamp || null
+      lastEntry: entries[0]?.entryDate || null
     })
   }
   
