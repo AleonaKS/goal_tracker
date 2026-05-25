@@ -20,7 +20,7 @@ export function LinearProgressBar({
   const elapsedDays = Math.ceil((Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24))
   const expectedProgress = Math.min((elapsedDays / totalDays) * 100, 100)
   
-  // Format dates
+  // Форматирование дат
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
   }

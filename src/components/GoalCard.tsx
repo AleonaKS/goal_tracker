@@ -22,14 +22,14 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const { deleteGoal, tasks, stages, metrics, metricEntries } = useApiDataStore()
 
-  // Calculate progress - include tasks via stages or by metric
+  // Расчёт прогресса - включая задачи через этапы или по метрике
   const { progress, completedTasks, totalTasks, calculatedStatus } = useMemo(() => {
     let progress = 0
     let completedTasks = 0
     let totalTasks = 0
 
     if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
-      // Calculate progress by metric
+      // Расчёт прогресса по метрике
       const metric = metrics.find(m => m.id === goal.progressMetricId)
       if (metric) {
         const entries = metricEntries.filter(e => e.metricId === metric.id)
@@ -37,11 +37,11 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
         const currentValue = (metric.initialValue || 0) + entriesSum
         const targetValue = metric.targetValue || 100
         progress = targetValue > 0 ? Math.round((currentValue / targetValue) * 100) : 0
-        // Cap progress at 100% for display
+        // Ограничение прогресса до 100% для отображения
         progress = Math.min(progress, 100)
       }
     } else {
-      // Calculate progress by tasks
+      // Расчёт прогресса по задачам
       const goalStageIds = stages.filter(s => s.goalId === goal.id).map(s => s.id)
       const goalTasks = tasks.filter(t =>
         t.goalId === goal.id || (t.stageId && goalStageIds.includes(t.stageId))
@@ -49,11 +49,11 @@ export function GoalCard({ goal, category, className }: GoalCardProps) {
       completedTasks = goalTasks.filter(t => t.completed).length
       totalTasks = goalTasks.length
       progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-      // Cap progress at 100% for display
+      // Ограничение прогресса до 100% для отображения
       progress = Math.min(progress, 100)
     }
 
-    // Calculate status based on deadline
+    // Расчёт статуса на основе дедлайна
     let status = goal.status
     if (goal.deadlineValue && status !== 'completed') {
       const deadline = new Date(goal.deadlineValue)

@@ -61,7 +61,7 @@ export function TaskCard({
   }
 
   const handleSubtaskChange = () => {
-    // Re-fetch subtasks when they change
+    // Повторная загрузка подзадач при их изменении
     if (task.id) {
       fetchSubtasks(task.id)
     }

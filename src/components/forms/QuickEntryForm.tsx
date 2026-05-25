@@ -33,7 +33,7 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
   const currentTotal = metricProgress.isPeriodBased ? metricProgress.periodValue : metricProgress.totalValue
   const currentTotalAll = metricProgress.totalValue
 
-  // Calculate final value based on input
+  // Расчёт итогового значения на основе ввода
   const inputNumber = parseFloat(inputValue) || 0
   const finalValue = mode === 'add' 
     ? currentTotal + inputNumber 
@@ -52,10 +52,7 @@ export function QuickEntryForm({ isOpen, onClose, metric, entries, onSave, mode:
       isAddition: mode === 'add'
     })
 
-    // ИСПРАВЛЕНИЕ: Убрали onClose() чтобы окно не закрывалось
-    // Теперь можно быстро добавлять несколько значений подряд
-
-    // Reset form для следующего ввода
+    // Сброс формы для следующего ввода
     setInputValue('')
     setNote('')
     // mode оставляем как есть для удобства

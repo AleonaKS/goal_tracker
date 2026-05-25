@@ -117,14 +117,14 @@ export function exportFilteredData(
   let filteredMetrics = metrics
   let filteredMetricEntries = metricEntries
 
-  // Filter by category
+  // Фильтрация по категории
   if (options.categoryId) {
     filteredGoals = filteredGoals.filter(goal => goal.categoryId === options.categoryId)
     filteredTasks = filteredTasks.filter(task => task.categoryId === options.categoryId)
     filteredMetrics = filteredMetrics.filter(metric => metric.categoryId === options.categoryId)
   }
 
-  // Filter by date range
+  // Фильтрация по диапазону дат
   if (options.dateFrom) {
     filteredGoals = filteredGoals.filter(goal => 
       goal.createdAt && new Date(goal.createdAt) >= options.dateFrom!
@@ -155,19 +155,19 @@ export function exportFilteredData(
     )
   }
 
-  // Filter completed items
+  // Фильтрация выполненных элементов
   if (!options.includeCompleted) {
     filteredGoals = filteredGoals.filter(goal => goal.status !== 'completed')
     filteredTasks = filteredTasks.filter(task => !task.completed)
   }
 
-  // Filter metrics
+  // Фильтрация метрик
   if (!options.includeMetrics) {
     filteredMetrics = []
     filteredMetricEntries = []
   }
 
-  // Get related items for filtered goals
+  // Получение связанных элементов для отфильтрованных целей
   const filteredGoalIds = new Set(filteredGoals.map(g => g.id))
   const filteredTaskIds = new Set(filteredTasks.map(t => t.id))
   const filteredMetricIds = new Set(filteredMetrics.map(m => m.id))
@@ -176,7 +176,7 @@ export function exportFilteredData(
   const filteredSubtasks = subtasks.filter(subtask => filteredTaskIds.has(subtask.taskId))
   filteredMetricEntries = filteredMetricEntries.filter(entry => filteredMetricIds.has(entry.metricId))
 
-  // Get categories for filtered items
+  // Получение категорий для отфильтрованных элементов
   const filteredCategoryIds = new Set([
     ...filteredGoals.map(g => g.categoryId).filter(Boolean),
     ...filteredTasks.map(t => t.categoryId).filter(Boolean),
@@ -201,20 +201,20 @@ export function exportFilteredData(
   downloadJSON(jsonData, filename)
 }
 
-// Import functions
+// Функции импорта
 export function parseImportData(jsonString: string): { data: ExportData | null; errors: string[] } {
   const errors: string[] = []
   
   try {
     const data = JSON.parse(jsonString)
     
-    // Validate structure
+    // Валидация структуры
     if (!data.user || !data.categories || !data.goals || !data.tasks || !data.metrics) {
       errors.push('Invalid file structure: missing required fields')
       return { data: null, errors }
     }
     
-    // Validate version
+    // Валидация версии
     if (!data.version) {
       errors.push('Warning: No version information found')
     }
@@ -230,19 +230,19 @@ export function validateImportData(data: ExportData): { isValid: boolean; errors
   const errors: string[] = []
   const warnings: string[] = []
   
-  // Validate user data
+  // Валидация данных пользователя
   if (!data.user.id || !data.user.email) {
     errors.push('Invalid user data: missing required fields')
   }
   
-  // Validate categories
+  // Валидация категорий
   data.categories.forEach((cat, index) => {
     if (!cat.id || !cat.name) {
       errors.push(`Invalid category at index ${index}: missing required fields`)
     }
   })
   
-  // Validate goals
+  // Валидация целей
   data.goals.forEach((goal, index) => {
     if (!goal.id || !goal.name) {
       errors.push(`Invalid goal at index ${index}: missing required fields`)
@@ -252,7 +252,7 @@ export function validateImportData(data: ExportData): { isValid: boolean; errors
     }
   })
   
-  // Validate tasks
+  // Валидация задач
   data.tasks.forEach((task, index) => {
     if (!task.id || !task.name) {
       errors.push(`Invalid task at index ${index}: missing required fields`)
@@ -262,7 +262,7 @@ export function validateImportData(data: ExportData): { isValid: boolean; errors
     }
   })
   
-  // Validate metrics
+  // Валидация метрик
   data.metrics.forEach((metric, index) => {
     if (!metric.id || !metric.name || !metric.type) {
       errors.push(`Invalid metric at index ${index}: missing required fields`)
@@ -272,7 +272,7 @@ export function validateImportData(data: ExportData): { isValid: boolean; errors
     }
   })
   
-  // Validate metric entries
+  // Валидация записей метрик
   data.metricEntries.forEach((entry, index) => {
     if (!entry.id || !entry.metricId) {
       errors.push(`Invalid metric entry at index ${index}: missing required fields`)
@@ -290,7 +290,7 @@ export function validateImportData(data: ExportData): { isValid: boolean; errors
 }
 
 export function prepareImportData(data: ExportData, currentUserId: string): ExportData {
-  // Generate new IDs for all entities to avoid conflicts
+  // Генерация новых ID для всех сущностей во избежание конфликтов
   const idMap = new Map<string, string>()
   const generateNewId = (oldId: string) => {
     if (idMap.has(oldId)) {
@@ -301,21 +301,21 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     return newId
   }
   
-  // Update user ID
+  // Обновление ID пользователя
   const updatedData = { ...data }
   updatedData.user = {
     ...data.user,
     id: currentUserId
   }
   
-  // Update categories
+  // Обновление категорий
   updatedData.categories = data.categories.map(cat => ({
     ...cat,
     id: generateNewId(cat.id),
     userId: currentUserId
   }))
   
-  // Update goals
+  // Обновление целей
   updatedData.goals = data.goals.map(goal => ({
     ...goal,
     id: generateNewId(goal.id),
@@ -323,7 +323,7 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     categoryId: goal.categoryId ? generateNewId(goal.categoryId) : undefined
   }))
   
-  // Update stages
+  // Обновление этапов
   updatedData.stages = data.stages.map(stage => ({
     ...stage,
     id: generateNewId(stage.id),
@@ -331,7 +331,7 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     goalId: generateNewId(stage.goalId)
   }))
   
-  // Update tasks
+  // Обновление задач
   updatedData.tasks = data.tasks.map(task => ({
     ...task,
     id: generateNewId(task.id),
@@ -342,7 +342,7 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     parentTaskId: task.parentTaskId ? generateNewId(task.parentTaskId) : undefined
   }))
   
-  // Update subtasks
+  // Обновление подзадач
   updatedData.subtasks = data.subtasks.map(subtask => ({
     ...subtask,
     id: generateNewId(subtask.id),
@@ -350,7 +350,7 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     taskId: generateNewId(subtask.taskId)
   }))
   
-  // Update metrics
+  // Обновление метрик
   updatedData.metrics = data.metrics.map(metric => ({
     ...metric,
     id: generateNewId(metric.id),
@@ -359,7 +359,7 @@ export function prepareImportData(data: ExportData, currentUserId: string): Expo
     goalId: metric.goalId ? generateNewId(metric.goalId) : undefined
   }))
   
-  // Update metric entries
+  // Обновление записей метрик
   updatedData.metricEntries = data.metricEntries.map(entry => ({
     ...entry,
     id: generateNewId(entry.id),

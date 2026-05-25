@@ -14,7 +14,7 @@ import { TaskSelectorModal } from './TaskSelectorModal'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/types'
 
-// Drag item types
+// Типы перетаскиваемых элементов
 const ItemTypes = {
   TASK: 'task',
 }
@@ -56,7 +56,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-// Task card component with react-dnd drag
+// Компонент карточки задачи с перетаскиванием react-dnd
 interface TaskCardProps {
   task: KanbanTask
   onToggleComplete: (task: KanbanTask) => void
@@ -162,7 +162,7 @@ function TaskCard({ task, onToggleComplete, onSelect, getCategoryColor, getGoalN
   )
 }
 
-// Day column component with react-dnd drop
+// Компонент колонки дня с сбросом react-dnd
 interface DayColumnProps {
   day: DayColumn
   onDrop: (task: KanbanTask, targetDate: Date) => void
@@ -266,7 +266,7 @@ export function WeeklyKanban({ className, weekStart }: WeeklyKanbanProps) {
 
   const currentWeekStart = weekStart || internalWeekStart
 
-  // Calculate week days
+  // Расчёт дней недели
   const weekDays = useMemo(() => {
     return WEEK_DAYS.map((day, index) => {
       const date = addDays(currentWeekStart, index)
@@ -284,7 +284,7 @@ export function WeeklyKanban({ className, weekStart }: WeeklyKanbanProps) {
         title: format(date, 'EEEE', { locale: ru }),
         date,
         tasks: dayTasks.sort((a, b) => {
-          // Sort by time block, then by completion
+          // Сортировка по временному блоку, затем по выполнению
           const aTime = TIME_BLOCKS.findIndex(t => t.id === a.timeBlock)
           const bTime = TIME_BLOCKS.findIndex(t => t.id === b.timeBlock)
           if (aTime !== bTime) return aTime - bTime
@@ -301,32 +301,32 @@ export function WeeklyKanban({ className, weekStart }: WeeklyKanbanProps) {
     return 'evening'
   }
 
-  // Handle task drop with time-blocking preservation
+  // Обработка сброса задачи с сохранением временных блоков
   const handleDrop = (task: KanbanTask, targetDate: Date) => {
-    // Update task due date to the target day
+    // Обновление даты выполнения задачи на целевой день
     const newDueDate = new Date(targetDate)
     
-    // Build updates object
+    // Формирование объекта обновлений
     const updates: Partial<Task> = {
       dueDate: newDueDate,
     }
 
-    // If task has startTime, adjust it to the new date
+    // Если у задачи есть startTime, скорректировать его для новой даты
     if (task.startTime) {
       const [hours, minutes] = task.startTime.split(':').map(Number)
       newDueDate.setHours(hours, minutes)
       
-      // If task has duration, calculate new endTime
+      // Если у задачи есть длительность, рассчитать новое endTime
       if (task.duration) {
         const endDate = new Date(newDueDate.getTime() + task.duration * 60000)
         updates.endTime = format(endDate, 'HH:mm')
       }
     } else if (task.dueDate) {
-      // Preserve time from original date
+      // Сохранение времени из исходной даты
       const oldDate = new Date(task.dueDate)
       newDueDate.setHours(oldDate.getHours(), oldDate.getMinutes())
     } else {
-      // Default time based on timeBlock or 9 AM
+      // Время по умолчанию на основе timeBlock или 9:00
       newDueDate.setHours(9, 0)
     }
 
@@ -454,7 +454,7 @@ export function WeeklyKanban({ className, weekStart }: WeeklyKanbanProps) {
   )
 }
 
-// Task detail modal with time block selection
+// Модальное окно деталей задачи с выбором временного блока
 interface TaskDetailModalProps {
   task: KanbanTask
   onClose: () => void
@@ -467,7 +467,7 @@ function TaskDetailModal({ task, onClose, onUpdate, onEdit }: TaskDetailModalPro
 
   const handleTimeBlockChange = (blockId: string) => {
     setTimeBlock(blockId)
-    // Update task time based on block
+    // Обновление времени задачи на основе блока
     const newDate = task.dueDate ? new Date(task.dueDate) : new Date()
     let startHour = 9
     switch (blockId) {
@@ -483,7 +483,7 @@ function TaskDetailModal({ task, onClose, onUpdate, onEdit }: TaskDetailModalPro
     }
     newDate.setHours(startHour, 0)
     
-    // Calculate end time based on duration
+    // Расчёт времени окончания на основе длительности
     const updates: Partial<Task> = { dueDate: newDate }
     if (task.duration) {
       const endDate = new Date(newDate.getTime() + task.duration * 60000)

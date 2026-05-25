@@ -167,8 +167,7 @@ src/components/UnitSelectorModalNew.tsx
 src/components/MobileGoalCard.tsx
 src/components/MobileTaskCard.tsx
 src/components/MobileMetricCard.tsx
-src/components/UniversalDetailModal.tsx
-src/components/RadarChart.tsx
+src/components/UniversalDetailModal.tsx 
 
 # Unused forms
 src/components/forms/MetricEntryForm.tsx

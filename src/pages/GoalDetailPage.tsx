@@ -195,9 +195,6 @@ export function GoalDetailPage() {
   const deleteStage = useApiDataStore(state => state.deleteStage)
   const deleteGoal = useApiDataStore(state => state.deleteGoal)
   const error = useApiDataStore(state => state.error)
-  // ИСПРАВЛЕНИЕ: Убрали storeLoading чтобы избежать мигания
-  // const storeLoading = useApiDataStore(state => state.isLoading)
-
   const goalData = goals.find(g => g.id === goalId)
   
   // Get stage IDs for this goal to include tasks with null goalId but matching stage
@@ -393,15 +390,6 @@ export function GoalDetailPage() {
   }, [goalData, progress])
 
   // Conditional returns after ALL hooks
-  // ИСПРАВЛЕНИЕ: Убрали проверку storeLoading чтобы не было мигания
-  // при CRUD операциях (updateTask, createMetricEntry и т.д.)
-  // if (storeLoading) {
-  //   return (
-  //     <div className="text-center py-12">
-  //       <p className="text-gray-500">Loading...</p>
-  //     </div>
-  //   )
-  // }
 
   if (error) {
     return (

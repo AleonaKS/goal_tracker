@@ -11,7 +11,7 @@ import { BarChart3, TrendingUp, Activity, Target } from 'lucide-react'
 export function ChartsShowcase() {
   const { tasks, goals, metrics, metricEntries } = useApiDataStore()
 
-  // 1. StackedBarChart: Tasks by Category (Completed vs Pending vs Overdue)
+  // 1. StackedBarChart: Задачи по категориям (выполнено/в работе/просрочено)
   const categoryTaskData = useMemo(() => {
     const categories = [...new Set(tasks.map(t => t.categoryId).filter(Boolean))]
     
@@ -30,7 +30,7 @@ export function ChartsShowcase() {
     }).slice(0, 6) // Limit to 6 categories
   }, [tasks])
 
-  // 2. MultiLineChart: Weekly Activity Trends
+  // 2. MultiLineChart: Еженедельные тренды активности
   const weeklyActivityData = useMemo(() => {
     const weeks = eachWeekOfInterval({
       start: subMonths(new Date(), 3),
@@ -64,7 +64,7 @@ export function ChartsShowcase() {
     })
   }, [tasks, goals, metricEntries])
 
-  // 3. AreaChart: Cumulative Progress Over Time
+  // 3. AreaChart: Накопительный прогресс во времени
   const cumulativeProgressData = useMemo(() => {
     const weeks = eachWeekOfInterval({
       start: subMonths(new Date(), 3),
@@ -102,7 +102,7 @@ export function ChartsShowcase() {
     })
   }, [tasks, goals, metricEntries])
 
-  // 4. ScatterChart: Task Complexity vs Completion Time
+  // 4. ScatterChart: Сложность задачи vs Время выполнения
   const taskComplexityData = useMemo(() => {
     const completedTasks = tasks.filter(t => 
       t.completed && t.complexity && t.createdAt && t.completedAt

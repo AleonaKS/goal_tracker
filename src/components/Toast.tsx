@@ -121,7 +121,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
   )
 }
 
-// Hook for using toast
+// Хук для использования toast-уведомлений
 import { useCallback } from 'react'
 
 export function useToast() {

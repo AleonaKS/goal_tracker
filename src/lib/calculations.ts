@@ -4,22 +4,22 @@ import type { Goal, Task, Metric, MetricEntry } from '@/types'
  * Calculate goal status based on goal object
  */
 export function calculateGoalStatusFromGoal(goal: Goal): Goal['status'] {
-  // If frozen, keep frozen
+  // Если заморожено, оставить замороженным
   if (goal.isFrozen) return 'frozen'
 
-  // If completed (by flag or by 100% progress), mark as completed
+  // Если завершено (флагом или 100% прогрессом), отметить как выполненное
   if (goal.completedAt || goal.status === 'completed' || goal.progress === 100) return 'completed'
 
   const today = new Date()
   const startDate = new Date(goal.startDate)
 
-  // Check if planned (future start)
+  // Проверка, запланировано ли (будущее начало)
   if (startDate > today) return 'planned'
 
-  // Check deadline
+  // Проверка дедлайна
   if (goal.deadlineValue) {
     const deadline = new Date(goal.deadlineValue)
-    // Reset time to compare dates only
+    // Сброс времени для сравнения только дат
     deadline.setHours(23, 59, 59, 999)
     today.setHours(0, 0, 0, 0)
 
@@ -84,7 +84,7 @@ export function calculateCurrentStreak(
 ): number {
   if (entries.length === 0) return 0
 
-  // Sort entries by date descending
+  // Сортировка записей по дате по убыванию
   const sortedEntries = [...entries].sort(
     (a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime()
   )
@@ -93,20 +93,20 @@ export function calculateCurrentStreak(
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // Check if there's an entry today or yesterday (depending on periodicity)
+  // Проверка наличия записи сегодня или вчера (в зависимости от периодичности)
   const lastEntry = sortedEntries[0]
   const lastEntryDate = new Date(lastEntry.entryDate)
   lastEntryDate.setHours(0, 0, 0, 0)
 
   if (periodicity === 'daily') {
-    // Check if last entry was today or yesterday
+    // Проверка, была ли последняя запись сегодня или вчера
     const diffDays = Math.floor(
       (today.getTime() - lastEntryDate.getTime()) / (1000 * 60 * 60 * 24)
     )
     if (diffDays > 1) return 0 // Streak broken
   }
 
-  // Count consecutive entries
+  // Подсчёт последовательных записей
   let currentDate = lastEntryDate
   streak = 1
 
@@ -122,7 +122,7 @@ export function calculateCurrentStreak(
       streak++
       currentDate = entryDate
     } else if (diffDays === 0) {
-      // Same day, skip
+      // Тот же день, пропуск
       continue
     } else {
       break
@@ -138,7 +138,7 @@ export function calculateCurrentStreak(
 export function calculateMaxStreak(entries: MetricEntry[]): number {
   if (entries.length === 0) return 0
 
-  // Sort entries by date ascending
+  // Сортировка записей по дате по возрастанию
   const sortedEntries = [...entries].sort(
     (a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
   )
@@ -217,7 +217,7 @@ export function calculateHeatmapData(
     return date.getFullYear() === year
   })
 
-  // Group by date
+  // Группировка по дате
   const byDate = new Map<string, number>()
   for (const entry of filteredEntries) {
     const dateKey = entry.entryDate.toISOString().split('T')[0]
@@ -225,7 +225,7 @@ export function calculateHeatmapData(
     byDate.set(dateKey, current + entry.value)
   }
 
-  // Normalize values 0-4 for heat levels
+  // Нормализация значений 0-4 для уровней тепла
   const maxValue = Math.max(...byDate.values(), 1)
   for (const [date, value] of byDate) {
     const level = Math.min(4, Math.floor((value / maxValue) * 4))
@@ -283,28 +283,28 @@ export function calculateExpectedCompletionDate(
   const now = new Date()
   const startDate = new Date(goal.startDate)
   
-  // If goal uses metric for progress calculation
+  // Если цель использует метрику для расчёта прогресса
   if (goal.progressCalculation === 'by_metric' && metric && entries.length > 0) {
     return calculateExpectedCompletionDateByMetric(goal, metric, entries)
   }
   
-  // Default calculation by progress rate
+  // Расчёт по умолчанию по скорости прогресса
   const daysElapsed = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
   
   if (daysElapsed === 0) return null
   
-  // Calculate progress rate (progress per day)
+  // Расчёт скорости прогресса (прогресс в день)
   const progressRate = goal.progress / daysElapsed
   
   if (progressRate === 0) return null
   
-  // Calculate remaining progress
+  // Расчёт оставшегося прогресса
   const remainingProgress = 100 - goal.progress
   
-  // Calculate estimated days to completion
+  // Расчёт оценочных дней до завершения
   const estimatedDaysToCompletion = Math.ceil(remainingProgress / progressRate)
   
-  // Calculate expected completion date
+  // Расчёт ожидаемой даты завершения
   const expectedDate = new Date(now.getTime() + (estimatedDaysToCompletion * 24 * 60 * 60 * 1000))
   
   return expectedDate
@@ -325,17 +325,17 @@ function calculateExpectedCompletionDateByMetric(
     new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
   )
   
-  // Calculate current value
+  // Расчёт текущего значения
   const currentValue = sortedEntries.reduce(
     (sum, e) => sum + (e.isAddition ? e.value : -e.value),
     metric.startValue
   )
   
-  // Calculate remaining value needed
+  // Расчёт оставшегося необходимого значения
   const remainingValue = metric.targetValue - currentValue
   if (remainingValue <= 0) return null // Already achieved
   
-  // Calculate weighted average pace (more recent entries have more weight)
+  // Расчёт взвешенного среднего темпа
   let weightedSum = 0
   let totalWeight = 0
   
@@ -352,7 +352,7 @@ function calculateExpectedCompletionDateByMetric(
       const valueDiff = Math.abs(currEntry.value - prevEntry.value)
       const pace = valueDiff / daysDiff
       
-      // Weight: more recent entries have higher weight
+      // Вес: более новые записи имеют больший вес
       const weight = i / sortedEntries.length
       weightedSum += pace * weight
       totalWeight += weight
@@ -364,10 +364,10 @@ function calculateExpectedCompletionDateByMetric(
   const averagePace = weightedSum / totalWeight
   if (averagePace === 0) return null
   
-  // Calculate estimated days to completion
+  // Расчёт оценочных дней до завершения
   const estimatedDaysToCompletion = Math.ceil(remainingValue / averagePace)
   
-  // Calculate expected completion date
+  // Расчёт ожидаемой даты завершения
   const expectedDate = new Date(now.getTime() + (estimatedDaysToCompletion * 24 * 60 * 60 * 1000))
   
   return expectedDate

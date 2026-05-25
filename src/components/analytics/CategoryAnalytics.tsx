@@ -11,7 +11,7 @@ interface CategoryAnalyticsProps {
   entries: MetricEntry[]
 }
 
-// Day names
+// Названия дней
 const dayNames = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 const fullDayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
@@ -23,7 +23,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState<ViewType>('table')
 
-  // Get date range based on period
+  // Получение диапазона дат на основе периода
   const getDateRange = () => {
     const end = new Date(currentDate)
     const start = new Date(currentDate)
@@ -64,7 +64,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
 
   const { start: periodStart, end: periodEnd } = getDateRange()
 
-  // Filter entries for current period
+  // Фильтрация записей за текущий период
   const periodEntries = useMemo(() => {
     return entries.filter(entry => {
       const entryDate = entry.entryDate instanceof Date 
@@ -74,17 +74,17 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
     })
   }, [entries, periodStart, periodEnd])
 
-  // Calculate statistics
+  // Расчёт статистики
   const stats = useMemo(() => {
     let total = 0
     let max = 0
     let min = Infinity
     const metricStats = new Map<string, { total: number; max: number; min: number; entries: number }>()
 
-    // Initialize stats for each metric
+    // Инициализация статистики для каждой метрики
     metrics.forEach(m => metricStats.set(m.id, { total: 0, max: 0, min: Infinity, entries: 0 }))
 
-    // Calculate daily totals
+    // Расчёт ежедневных итогов
     const dailyTotals = new Map<number, number>() // day of week (0-6) -> total
 
     periodEntries.forEach(entry => {
@@ -109,7 +109,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
       min = Math.min(min, entry.value)
     })
 
-    // Find metric names for max/min
+    // Поиск названий метрик для максимума/минимума
     let maxMetricName = ''
     let minMetricName = ''
     let maxValue = 0
@@ -140,7 +140,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
     }
   }, [periodEntries, metrics])
 
-  // Donut chart data
+  // Данные кольцевой диаграммы
   const pieChartData = useMemo(() => {
     return metrics.map(metric => {
       const metricEntries = periodEntries.filter(e => e.metricId === metric.id)
@@ -153,7 +153,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
     }).filter(d => d.value > 0)
   }, [metrics, periodEntries])
 
-  // Navigation functions
+  // Функции навигации
   const navigatePrev = () => {
     const newDate = new Date(currentDate)
     switch (period) {
@@ -192,7 +192,7 @@ export function CategoryAnalytics({ category, metrics, entries }: CategoryAnalyt
     setCurrentDate(newDate)
   }
 
-  // Format date range for display
+  // Форматирование диапазона дат для отображения
   const formatDateRange = () => {
     switch (period) {
       case 'day':

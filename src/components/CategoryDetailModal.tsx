@@ -45,7 +45,7 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
     return metricEntries.filter(e => categoryMetricIds.includes(e.metricId))
   }, [metricEntries, categoryMetricIds])
 
-  // Calculate week range based on offset (null = all time)
+  // Расчёт диапазона недели на основе смещения (null = всё время)
   const weekRange = useMemo(() => {
     if (weekOffset === null) return null
     const base = new Date()
@@ -54,7 +54,7 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
     return { start, end }
   }, [weekOffset])
 
-  // Filter entries by selected week
+  // Фильтрация записей по выбранной неделе
   const filteredEntries = useMemo(() => {
     if (!weekRange) return categoryEntries
     return categoryEntries.filter(e => {
@@ -63,7 +63,7 @@ export function CategoryDetailModal({ isOpen, onClose, initialCategory }: Catego
     })
   }, [categoryEntries, weekRange])
 
-  // Stacked bar chart data - by days of week
+  // Данные для столбчатой диаграммы - по дням недели
   const stackedBarData = useMemo(() => {
     const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
     const data = dayNames.map((day, index) => {

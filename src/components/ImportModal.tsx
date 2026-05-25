@@ -60,7 +60,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
     setResult(null)
 
     try {
-      // Read and parse file
+      // Чтение и разбор файла
       const fileContent = await selectedFile.text()
       const { data, errors: parseErrors } = parseImportData(fileContent)
 
@@ -74,7 +74,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
         return
       }
 
-      // Validate data
+      // Валидация данных
       const validation = validateImportData(data)
       if (!validation.isValid) {
         setResult({
@@ -87,10 +87,10 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
         return
       }
 
-      // Prepare data for import (generate new IDs)
+      // Подготовка данных для импорта (генерация новых ID)
       const preparedData = prepareImportData(data, user.id)
 
-      // Import data in correct order
+      // Импорт данных в правильном порядке
       const imported = {
         categories: 0,
         goals: 0,
@@ -105,7 +105,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
       const warnings = validation.warnings || []
 
       try {
-        // Import categories first
+        // Импорт категорий первыми
         for (const category of preparedData.categories) {
           try {
             await createCategory(category)
@@ -115,7 +115,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import goals
+        // Импорт целей
         for (const goal of preparedData.goals) {
           try {
             await createGoal(goal)
@@ -125,7 +125,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import stages
+        // Импорт этапов
         for (const stage of preparedData.stages) {
           try {
             await createStage(stage)
@@ -135,7 +135,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import tasks
+        // Импорт задач
         for (const task of preparedData.tasks) {
           try {
             await createTask(task)
@@ -145,7 +145,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import subtasks
+        // Импорт подзадач
         for (const subtask of preparedData.subtasks) {
           try {
             await createSubtask(subtask)
@@ -155,7 +155,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import metrics
+        // Импорт метрик
         for (const metric of preparedData.metrics) {
           try {
             await createMetric(metric)
@@ -165,7 +165,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
           }
         }
 
-        // Import metric entries
+        // Импорт записей метрик
         for (const entry of preparedData.metricEntries) {
           try {
             await createMetricEntry(entry)

@@ -1,12 +1,11 @@
 import { useCallback } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
-import { useToastStore } from '@/stores/toastStore'
-import { awardPoints, checkAchievements, POINTS_CONFIG, calculateLevel } from '@/lib/gamification'
+import { awardPoints, checkAchievements, POINTS_CONFIG } from '@/lib/gamification'
 import { getUserById } from '@/lib/supabase-api'
 import type { Task, Goal, Metric } from '@/types'
 
-// Use Omit for input types since CreateInput types were removed
+// Использование Omit для типов ввода, т.к. CreateInput типы удалены
 type CreateGoalInput = Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>
 type CreateTaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>
 type CreateMetricInput = Omit<Metric, 'id' | 'createdAt' | 'updatedAt'>
@@ -28,52 +27,22 @@ export function useGamificationActions() {
     metricEntries
   } = useApiDataStore()
 
-  const actionLabels: Record<string, string> = {
-    CREATE_GOAL: 'Создание цели',
-    COMPLETE_GOAL: 'Цель выполнена',
-    GOAL_STAGE_COMPLETED: 'Этап цели пройден',
-    CREATE_TASK: 'Создание задачи',
-    COMPLETE_TASK: 'Задача выполнена',
-    COMPLETE_SUBTASK: 'Подзадача выполнена',
-    CREATE_METRIC: 'Создание метрики',
-    METRIC_ENTRY: 'Запись в метрике',
-    REACH_METRIC_TARGET: 'Цель метрики достигнута',
-    HABIT_ENTRY: 'Привычка отмечена',
-    HABIT_STREAK_7: 'Серия 7 дней',
-    HABIT_STREAK_30: 'Серия 30 дней',
-    HABIT_STREAK_100: 'Серия 100 дней',
-    CREATE_CATEGORY: 'Создание категории',
-    FIRST_GOAL: 'Первая цель!',
-    FIRST_TASK: 'Первая задача!',
-    FIRST_METRIC: 'Первая метрика!',
-    ACHIEVEMENT_UNLOCKED: 'Достижение',
-    WEEKLY_REPORT_VIEW: 'Просмотр отчёта',
-  }
-
-  const { addToast } = useToastStore()
+  // Колбэк для toast-уведомлений
+  const onPointsAwarded = useCallback((points: number, action: string, metadata?: Record<string, any>) => {
+    // Будет вызван компонентом, использующим этот хук
+    console.log(`[Gamification] Awarded ${points} points for ${action}`, metadata)
+  }, [])
 
   const awardPointsAsync = useCallback(async (actionType: keyof typeof POINTS_CONFIG, metadata?: Record<string, any>) => {
     if (!user?.id) return null
     try {
       const result = await awardPoints(user.id, actionType, metadata)
       if (result.success) {
-        const label = actionLabels[actionType] || actionType
-        addToast({
-          type: 'points',
-          title: 'Получены очки!',
-          message: label,
-          points: result.pointsAwarded,
-          duration: 3000
-        })
+        console.log(`[Gamification] Awarded ${result.pointsAwarded} points for ${actionType}`)
+        onPointsAwarded(result.pointsAwarded, actionType, metadata)
         
         if (result.leveledUp) {
-          const levelInfo = calculateLevel(result.newTotal)
-          addToast({
-            type: 'level',
-            title: 'Новый уровень!',
-            message: `${levelInfo.level}: ${levelInfo.title}`,
-            duration: 5000
-          })
+          console.log(`[Gamification] User leveled up! New total: ${result.newTotal}`)
         }
         return result
       }
@@ -81,7 +50,7 @@ export function useGamificationActions() {
       console.error('[Gamification] Failed to award points:', error)
     }
     return null
-  }, [user?.id, addToast])
+  }, [user?.id, onPointsAwarded])
 
   const checkAchievementsAsync = useCallback(async () => {
     if (!user?.id) return
@@ -98,22 +67,15 @@ export function useGamificationActions() {
       }
       
       const newAchievements = await checkAchievements(user.id, stats)
-      for (const ach of newAchievements) {
-        addToast({
-          type: 'achievement',
-          title: `Достижение разблокировано: ${ach.title}`,
-          message: ach.description,
-          icon: ach.icon,
-          points: ach.points,
-          duration: 5000
-        })
+      if (newAchievements.length > 0) {
+        console.log(`[Gamification] Unlocked ${newAchievements.length} new achievements!`)
       }
     } catch (error) {
       console.error('[Gamification] Failed to check achievements:', error) 
     }
   }, [user?.id, goals, tasks, metrics])
 
-  // Wrapped createGoal with gamification
+  // Обёртка createGoal с геймификацией
   const createGoal = useCallback(async (data: CreateGoalInput) => {
     await originalCreateGoal(data)
     await awardPointsAsync('CREATE_GOAL', { }) 
@@ -123,12 +85,12 @@ export function useGamificationActions() {
     await checkAchievementsAsync()
   }, [originalCreateGoal, awardPointsAsync, checkAchievementsAsync, goals.length])
 
-  // Wrapped complete goal (via updateGoal)
+  // Обёртка завершения цели (через updateGoal)
   const completeGoal = useCallback(async (goalId: string) => {
     const goal = goals.find(g => g.id === goalId)
     if (!goal) return
     
-    // Update goal status
+    // Обновление статуса цели
     const result = await useApiDataStore.getState().updateGoal(goalId, { 
       status: 'completed',
       completedAt: new Date()
@@ -141,22 +103,22 @@ export function useGamificationActions() {
     return result
   }, [goals, awardPointsAsync, checkAchievementsAsync])
 
-  // Wrapped createTask with gamification
+  // Обёртка createTask с геймификацией
   const createTask = useCallback(async (data: CreateTaskInput) => {
     await originalCreateTask(data)
     await awardPointsAsync('CREATE_TASK', { goalId: data.goalId })
-    // Check for first task
+    // Проверка на первую задачу
     if (tasks.length === 0) {
       await awardPointsAsync('FIRST_TASK' as any, { })
     }
     await checkAchievementsAsync()
   }, [originalCreateTask, awardPointsAsync, checkAchievementsAsync, tasks.length])
 
-  // Wrapped updateTask (for completion) with gamification
+  // Обёртка updateTask (для завершения) с геймификацией
   const completeTask = useCallback(async (taskId: string, taskData: Partial<Task> = {}) => {
     const task = tasks.find(t => t.id === taskId)
     if (!task || task.completed) {
-      // Task doesn't exist or already completed
+      // Задача не существует или уже завершена
       await originalUpdateTask(taskId, taskData)
       return
     }
@@ -168,7 +130,7 @@ export function useGamificationActions() {
     }
     
     await originalUpdateTask(taskId, updates)
-    // Calculate points based on priority and weight
+    // Расчёт очков на основе приоритета и веса
     const basePoints = POINTS_CONFIG.COMPLETE_TASK
     const priorityBonus = (task.priority || 3) * 2
     const weightBonus = Math.round((task.weight || 1) * 5)
@@ -182,7 +144,7 @@ export function useGamificationActions() {
       totalPoints
     })
     
-    // Check if goal stage completed
+    // Проверка завершения этапа цели
     if (task.stageId) {
       const stageTasks = tasks.filter(t => t.stageId === task.stageId)
       const allCompleted = stageTasks.every(t => t.completed || t.id === taskId)
@@ -194,23 +156,23 @@ export function useGamificationActions() {
     await checkAchievementsAsync()
   }, [tasks, originalUpdateTask, awardPointsAsync, checkAchievementsAsync])
 
-  // Wrapped createMetric with gamification
+  // Обёртка createMetric с геймификацией
   const createMetric = useCallback(async (data: CreateMetricInput) => {
     await originalCreateMetric(data)
     await awardPointsAsync('CREATE_METRIC', { type: data.type })
-    // Check for first metric
+    // Проверка на первую метрику
     if (metrics.length === 0) {
       await awardPointsAsync('FIRST_METRIC' as any, { })
     }
     await checkAchievementsAsync()
   }, [originalCreateMetric, awardPointsAsync, checkAchievementsAsync, metrics.length])
 
-  // Wrapped createMetricEntry with gamification
+  // Обёртка createMetricEntry с геймификацией
   const createMetricEntry = useCallback(async (metricId: string, value: number, note?: string, entryDate?: Date) => {
     const metric = metrics.find(m => m.id === metricId)
     if (!metric) return
     
-    // Create the entry object for the original function
+    // Создание объекта записи для оригинальной функции
     await originalCreateMetricEntry({
       metricId,
       entryDate: entryDate || new Date(),
@@ -222,21 +184,21 @@ export function useGamificationActions() {
       overachievementValue: 0
     })
     
-    // Award points based on metric type
+    // Начисление очков на основе типа метрики
     if (metric.type === 'habit' || metric.type === 'simple_habit') {
       await awardPointsAsync('HABIT_ENTRY', { metricId, value })
     } else {
       await awardPointsAsync('METRIC_ENTRY', { metricId, value })
     }
     
-    // Check if target reached
+    // Проверка достижения цели
     const entries = metricEntries.filter(e => e.metricId === metricId)
     const totalValue = entries.reduce((sum, e) => sum + e.value, 0) + value
     
     if (metric.targetValue && totalValue >= metric.targetValue) {
       const previousTotal = totalValue - value
       if (previousTotal < metric.targetValue) {
-        // Just reached target
+        // Только что достигли цели
         await awardPointsAsync('REACH_METRIC_TARGET', { metricId, targetValue: metric.targetValue })
       }
     }

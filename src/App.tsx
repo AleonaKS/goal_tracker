@@ -14,7 +14,7 @@ import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAutoProgress } from '@/hooks/useAutoProgress'
 import { useEffect, useState, useRef } from 'react'
 
-// Layout wrapper for authenticated routes
+// Обёртка макета для аутентифицированных маршрутов
 function AuthenticatedLayout() {
   return (
     <Layout>
@@ -23,7 +23,7 @@ function AuthenticatedLayout() {
   )
 }
 
-// Loading screen component
+// Компонент экрана загрузки
 function LoadingScreen({ authLoading }: { authLoading: boolean }) {
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -35,7 +35,7 @@ function LoadingScreen({ authLoading }: { authLoading: boolean }) {
   )
 }
 
-// Error screen component
+// Компонент экрана ошибки
 function ErrorScreen({ error }: { error: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -58,48 +58,40 @@ function App() {
   const { runAutoCalculations } = useAutoProgress()
   const hasLoadedData = useRef(false)
 
-  // Initialize auth on mount
+  // Инициализация аутентификации при монтировании
   useEffect(() => {
     initialize()
   }, [])
 
-  // Sync user between stores
+  // Синхронизация пользователя между сторами
   useEffect(() => {
     setUser(user)
   }, [user])
 
-  // Load data when user logs in (with deduplication)
-  // ИСПРАВЛЕНИЕ: убрали fetchAll и runAutoCalculations из зависимостей
-  // чтобы предотвратить перезагрузку при изменении user (например, после refreshUser)
+  // Загрузка данных при входе пользователя (с дедупликацией)
   useEffect(() => {
     if (user && !hasLoadedData.current) {
       hasLoadedData.current = true
       console.log('[App] Loading data for user:', user.email)
       fetchAll().then(() => {
-        // Run auto calculations after data is loaded
+        // Запуск автовычислений после загрузки данных
         runAutoCalculations()
       })
     }
-  }, [user])  
+  }, [user])
   
-  // Show loading while initializing
+  // Показ загрузки во время инициализации
   if (!isInitialized) {
     return <LoadingScreen authLoading={true} />
   }
 
-  // Show loading while authenticating
+  // Показ загрузки во время аутентификации
   if (authLoading) {
     return <LoadingScreen authLoading={true} />
   }
 
-  // ИСПРАВЛЕНИЕ: Убрали проверку loading чтобы не было мигания
-  // при CRUD операциях (updateTask, createMetricEntry и т.д.)
-  // Начальная загрузка контролируется через hasLoadedData.current
-  // if (user && loading) {
-  //   return <LoadingScreen authLoading={false} />
-  // }
 
-  // Show error state
+  // Показ состояния ошибки
   if (error && user) {
     return <ErrorScreen error={error} />
   }

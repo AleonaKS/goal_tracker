@@ -16,7 +16,7 @@ interface MetricCardProps {
 }
 
 export function MetricCard({ metric, className }: MetricCardProps) {
-  // DEBUG: Log metric type to diagnose display issues
+  // ОТЛАДКА: Логирование типа метрики для диагностики проблем отображения
   console.log(`[MetricCard] ${metric.name}: type="${metric.type}", id=${metric.id}`)
 
   const [showMenu, setShowMenu] = useState(false)
@@ -215,7 +215,7 @@ export function MetricCard({ metric, className }: MetricCardProps) {
               </div>
             </div>
           ) : (
-            // Complex habit and counter - show detailed stats like counter
+            // Сложная привычка и счётчик - показ детальной статистики как у счётчика
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className={cn(
                 "text-center p-2 rounded-lg transition-colors",

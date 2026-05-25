@@ -11,7 +11,7 @@ interface RadarChartProps {
 }
 
 export function RadarChart({ data, height = 300, width = 400 }: RadarChartProps) {
-  // Prepare data for recharts
+  // Подготовка данных для recharts
   const radarData = data.map(item => ({
     skill: item.skill,
     A: item.value,

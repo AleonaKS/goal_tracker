@@ -17,9 +17,9 @@ export function useGoals(filter?: GoalFilter, sort?: GoalSort) {
 
   const goalsWithProgress = useMemo(() => {
     return goals.map((goal): GoalWithProgress => {
-      // Get stages for this goal to include tasks with null goalId
+      // Получение этапов цели для включения задач без goalId
       const goalStageIds = stages.filter(s => s.goalId === goal.id).map(s => s.id)
-      // Include tasks with goalId OR belonging to goal's stages
+      // Включение задач с goalId ИЛИ принадлежащих этапам цели
       const goalTasks = tasks.filter(t => 
         t.goalId === goal.id || (t.stageId && goalStageIds.includes(t.stageId))
       )
@@ -28,7 +28,7 @@ export function useGoals(filter?: GoalFilter, sort?: GoalSort) {
 
       let progress = 0
       if (goal.progressCalculation === 'by_tasks') {
-        // Use weighted progress calculation
+        // Использование взвешенного расчёта прогресса
         const tasksWithSubtasks = goalTasks.map(task => {
           const taskSubtasks = subtasks.filter(st => st.taskId === task.id)
           const taskProgress = calculateTaskProgress({
@@ -146,7 +146,7 @@ export function useGoal(goalId: string) {
 
     const goalStages = stages.filter(s => s.goalId === goalId)
     const goalStageIds = goalStages.map(s => s.id)
-    // Include tasks with goalId OR belonging to goal's stages
+    // Включение задач с goalId ИЛИ принадлежащих этапам цели
     const allGoalTasks = tasks.filter(t => 
       t.goalId === goalId || (t.stageId && goalStageIds.includes(t.stageId))
     )

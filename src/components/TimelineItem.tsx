@@ -20,7 +20,7 @@ export function TimelineItem({ item, categoryColor }: TimelineItemProps) {
   const duration = item.end - item.start
   const days = Math.ceil(duration / (1000 * 60 * 60 * 24))
 
-  // Get icon and color based on type
+  // Получение иконки и цвета на основе типа
   const getIcon = () => {
     const colorClass = progress === 100 ? 'text-green-600' : 
       item.type === 'goal' ? 'text-blue-600' :
@@ -36,14 +36,14 @@ export function TimelineItem({ item, categoryColor }: TimelineItemProps) {
     }
   }
 
-  // Get progress bar color
+  // Получение цвета полосы прогресса
   const getProgressColor = () => {
     if (item.type === 'goal') return categoryColor || '#3b82f6'
     if (item.type === 'stage') return '#8b5cf6'
     return progress === 100 ? '#10b981' : '#f59e0b'
   }
 
-  // Get status badge
+  // Получение значка статуса
   const getStatusBadge = () => {
     if (progress === 100) {
       return (

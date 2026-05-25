@@ -15,7 +15,7 @@ export function LineChart({
   height = 200,
   showTrend = true 
 }: LineChartProps) {
-  // Calculate trend line
+  // Расчёт линии тренда
   const calculateTrend = () => {
     if (data.length < 2) return data
     

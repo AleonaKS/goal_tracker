@@ -10,7 +10,7 @@ export { GanttChart } from './GanttChart'
 export { CategoryAnalytics } from './CategoryAnalytics'
 export { CategoryAnalyticsTable } from './CategoryAnalyticsTable'
 
-// New chart types from images
+// Новые типы графиков из изображений
 export { StackedBarChart } from './StackedBarChart'
 export { MultiLineChart } from './MultiLineChart'
 export { AreaChart } from './AreaChart'

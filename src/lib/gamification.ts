@@ -1,13 +1,13 @@
 import { getUserById, updateUserGamificationStats, createUserAchievement, getUserAchievements, addPointsHistoryEntry, getPointsHistory } from './supabase-api'
 
-// Points configuration
+// Конфигурация очков
 export const POINTS_CONFIG = {
-  // Goals
+  // Цели
   CREATE_GOAL: 10,
   COMPLETE_GOAL: 50,
   GOAL_STAGE_COMPLETED: 15,
   
-  // Tasks
+  // Задачи
   CREATE_TASK: 5,
   COMPLETE_TASK: 10,
   COMPLETE_SUBTASK: 3,

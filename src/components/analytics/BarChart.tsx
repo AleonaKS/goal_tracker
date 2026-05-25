@@ -46,7 +46,7 @@ export function BarChart({ data, color = '#22c55e', height = 200 }: BarChartProp
         </ReBarChart>
       </ResponsiveContainer>
       
-      {/* Stats summary */}
+      {/* Сводка статистики */}
       <div className="flex items-center justify-between mt-4 text-sm">
         <div className="text-gray-600">
           <span className="font-medium">Всего:</span>{' '}

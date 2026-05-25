@@ -141,7 +141,7 @@ export function DraggableCalendarTask({
   )
 }
 
-// Droppable day cell component
+// Компонент ячейки дня для перетаскивания
 interface DroppableDayCellProps {
   date: Date
   children: React.ReactNode

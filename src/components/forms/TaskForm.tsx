@@ -8,7 +8,7 @@ import React from 'react'
 import { useFieldErrorModal } from '@/hooks/useFieldErrorModal'
 import { FieldErrorModal } from '@/components/FieldErrorModal'
 
-// Helper to format date for date input (YYYY-MM-DD)
+// Вспомогательная функция для форматирования даты (ГГГГ-ММ-ДД)
 const formatDateForInput = (date: Date | string | null | undefined): string => {
   if (!date) return ''
   const d = typeof date === 'string' ? new Date(date) : date
@@ -59,14 +59,14 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel, goa
 
   const { errorMessage, clearError } = useFieldErrorModal(errors)
 
-  // Update form when goal selection changes
+  // Обновление формы при изменении выбранной цели
   React.useEffect(() => {
     if (selectedGoalId) {
       setValue('goalId', selectedGoalId)
     }
   }, [selectedGoalId, setValue])
 
-  // Set date values when initialData changes - convert to YYYY-MM-DD for input
+  // Установка значений даты при изменении initialData
   React.useEffect(() => {
     if (initialData?.startDate) {
       setValue('startDate', formatDateForInput(initialData.startDate) as any)
@@ -83,7 +83,7 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel, goa
   const duration = watch('duration')
   const startTime = watch('startTime')
 
-  // Auto-calculate endTime when startTime or duration changes
+  // Автоматический расчёт endTime при изменении startTime или duration
   React.useEffect(() => {
     if (startTime && duration) {
       const [hours, minutes] = startTime.split(':').map(Number)
@@ -116,7 +116,7 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel, goa
       updatedAt: new Date(),
       userId: user?.id || '',
       periodType: undefined,
-      // Time blocking fields
+      // Поля временных блоков
       duration: data.duration,
       startTime: data.startTime,
       endTime: data.endTime,
@@ -143,7 +143,7 @@ export function TaskForm({ goalId, stageId, initialData, onSubmit, onCancel, goa
     }
   }
 
-  // Log form errors for debugging
+  // Логирование ошибок формы для отладки
   console.log('Current form errors:', errors)
   console.log('Form isSubmitting:', isSubmitting)
   console.log('Form values:', watch())

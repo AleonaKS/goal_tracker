@@ -22,7 +22,7 @@ import type {
   MetricEntryCreateInput
 } from '@/types/supabase-api'
 
-// Categories
+// Категории
 export async function getCategories(userId: string): Promise<Category[]> {
   return api.getCategories(userId)
 }
@@ -39,7 +39,7 @@ export async function deleteCategory(id: string): Promise<void> {
   return api.deleteCategory(id)
 }
 
-// Goals
+// Цели
 export async function getGoals(userId: string): Promise<Goal[]> {
   return api.getGoals(userId)
 }
@@ -60,7 +60,7 @@ export async function deleteGoal(id: string): Promise<void> {
   return api.deleteGoal(id)
 }
 
-// Tasks
+// Задачи
 export async function getTasks(userId: string): Promise<Task[]> {
   return api.getTasks(userId)
 }
@@ -77,7 +77,7 @@ export async function deleteTask(id: string): Promise<void> {
   return api.deleteTask(id)
 }
 
-// Stages
+// Этапы
 export async function getStages(userId: string): Promise<Stage[]> {
   return api.getStages(userId)
 }
@@ -94,7 +94,7 @@ export async function deleteStage(id: string): Promise<void> {
   return api.deleteStage(id)
 }
 
-// Metrics
+// Метрики
 export async function getMetrics(userId: string): Promise<Metric[]> {
   return api.getMetrics(userId)
 }
@@ -111,7 +111,7 @@ export async function deleteMetric(id: string): Promise<void> {
   return api.deleteMetric(id)
 }
 
-// Metric Entries
+// Записи метрик
 export async function getMetricEntries(metricId: string): Promise<MetricEntry[]> {
   return api.getMetricEntries(metricId)
 }
@@ -128,7 +128,7 @@ export async function deleteMetricEntry(id: string): Promise<void> {
   return api.deleteMetricEntry(id)
 }
 
-// Dashboard Stats
+// Статистика панели управления
 export async function getDashboardStats(userId: string): Promise<DashboardStats> {
   const goals = await api.getGoals(userId)
   const tasks = await api.getTasks(userId)
@@ -143,7 +143,7 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
   return stats
 }
 
-// Upcoming items
+// Предстоящие элементы
 export async function getUpcomingTasks(userId: string, days: number = 7): Promise<Task[]> {
   const tasks = await api.getTasks(userId)
   const now = new Date()
@@ -172,7 +172,7 @@ export async function getUpcomingGoals(userId: string, days: number = 30): Promi
     .sort((a, b) => new Date(a.deadlineValue!).getTime() - new Date(b.deadlineValue!).getTime())
 }
 
-// Units
+// Единицы измерения
 export async function getUnits(): Promise<Unit[]> {
   return api.getUnits()
 }
@@ -189,7 +189,7 @@ export async function deleteUnit(id: string): Promise<void> {
   return api.deleteUnit(id)
 }
 
-// Metric Analytics
+// Аналитика метрик
 export async function getMetricAnalytics(userId: string): Promise<MetricAnalytics[]> {
   const metrics = await api.getMetrics(userId)
   const analytics: MetricAnalytics[] = []
@@ -225,7 +225,7 @@ export async function upsertMetricAnalytics(analytics: {
   return api.upsertMetricAnalytics(analytics)
 }
 
-// Favorite Filters
+// Избранные фильтры
 export async function getFavoriteFilters(userId: string): Promise<FavoriteFilter[]> {
   return api.getFavoriteFilters(userId)
 }

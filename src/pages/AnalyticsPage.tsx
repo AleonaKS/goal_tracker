@@ -10,9 +10,6 @@ import { SkillsRadarChart, MetricRadarChart, AnalysisRadarChart } from '@/compon
 import { CategoryDetailModal } from '@/components/CategoryDetailModal'
 import { cn } from '@/lib/utils'
 import { DEFAULT_ACHIEVEMENTS } from '@/lib/gamification'
-import { GamificationAnalytics } from '@/components/GamificationAnalytics'
-import { ToastContainer } from '@/components/Toast'
-import { useToastStore } from '@/stores/toastStore'
 import type { Metric, Category } from '@/types'
 
 export function AnalyticsPage() {
@@ -20,7 +17,6 @@ export function AnalyticsPage() {
   const { user } = useAuthStore()
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
-  const { toasts, removeToast } = useToastStore()
 
   const achievements = DEFAULT_ACHIEVEMENTS
 
@@ -292,9 +288,6 @@ export function AnalyticsPage() {
         )}
       </div>
 
-      {/* Gamification Analytics Charts */}
-      {gamification && <GamificationAnalytics />}
-
       {selectedMetric && (
         <MetricAnalyticsModal
           isOpen={true}
@@ -311,8 +304,6 @@ export function AnalyticsPage() {
           initialCategory={selectedCategory}
         />
       )}
-
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   )
 }

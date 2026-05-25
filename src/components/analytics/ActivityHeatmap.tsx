@@ -1,2 +1,2 @@
-// This file is deprecated. Use the new ActivityHeatmap component from /components/ActivityHeatmap.tsx
+// Этот файл устарел. Используйте новый компонент ActivityHeatmap из /components/ActivityHeatmap.tsx
 export { ActivityHeatmap, CompactActivityHeatmap, FullActivityHeatmap } from '../ActivityHeatmap'

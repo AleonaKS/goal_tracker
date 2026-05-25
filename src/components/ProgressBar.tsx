@@ -9,7 +9,7 @@ interface ProgressBarProps {
   color?: string
 }
 
-// Helper function to get color based on progress percentage
+// Вспомогательная функция для получения цвета на основе процента прогресса
 function getProgressColor(progress: number): string {
   if (progress < 25) return 'bg-red-500' // Low progress - red
   if (progress < 50) return 'bg-orange-500' // Below half - orange
@@ -32,9 +32,9 @@ export function ProgressBar({
     lg: 'h-3',
   }
 
-  // Use provided color or determine based on progress
+  // Использовать указанный цвет или определить на основе прогресса
   const barColor = color || getProgressColor(progress)
-  // Check if color is a hex color (starts with #)
+  // Проверка, является ли цвет HEX-цветом (начинается с #)
   const isHexColor = barColor.startsWith('#')
 
   return (

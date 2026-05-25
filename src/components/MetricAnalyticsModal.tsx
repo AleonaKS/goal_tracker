@@ -31,30 +31,30 @@ interface MetricAnalyticsModalProps {
   onDelete?: (metricId: string) => void
 }
 
-// Helper function to format number with spaces
+// Вспомогательная функция для форматирования числа с пробелами
 const formatNumber = (num: number): string => {
   return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 }
 
-// Helper to get week day name
+// Вспомогательная функция для получения названия дня недели
 const getWeekDayName = (index: number): string => {
   const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
   return days[index]
 }
 
-// Helper to get month name (genitive case for date ranges)
+// Вспомогательная функция для получения названия месяца (родительный падеж)
 const getMonthNameGenitive = (monthIndex: number): string => {
   const months = ['янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня', 'июля', 'авг.', 'сен.', 'окт.', 'нояб.', 'дек.']
   return months[monthIndex]
 }
 
-// Helper to get month name (nominative for titles)
+// Вспомогательная функция для получения названия месяца (именительный падеж)
 const getMonthNameNominative = (monthIndex: number): string => {
   const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
   return months[monthIndex]
 }
 
-// Helper to format date as short string (DD.MM.YYYY)
+// Вспомогательная функция для форматирования даты (ДД.ММ.ГГГГ)
 const formatDateShort = (date: Date): string => {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`
 }
@@ -93,14 +93,14 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     setOptimisticMetric(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, metric.id])
-  // Calculate all statistics
+  // Расчёт всей статистики
   const stats = useMemo(() => {
     // Используем оптимистичное значение если есть, иначе считаем из entries
     const totalValue = optimisticMetric?.totalValue !== undefined
       ? optimisticMetric.totalValue
       : entries.filter(e => !e.id.startsWith('temp-')).reduce((sum, e) => sum + e.value, 0)
 
-    // For habits with periodicity, calculate value for current period
+    // Для привычек с периодичностью рассчитывать значение за текущий период
     const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
     let periodValue = totalValue
 
@@ -112,7 +112,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
         dailyTotals.set(dateStr, (dailyTotals.get(dateStr) || 0) + e.value)
       })
 
-      // Calculate period boundaries based on resetPeriodicity
+      // Расчёт границ периода на основе resetPeriodicity
       let periodStart = new Date()
       let periodEnd = new Date()
 
@@ -153,7 +153,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
         periodEnd.setHours(23, 59, 59, 999)
       }
 
-      // Sum values only within period
+      // Суммирование значений только в пределах периода
       periodValue = 0
       dailyTotals.forEach((value, dateStr) => {
         const entryDate = new Date(dateStr)
@@ -163,7 +163,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       })
     }
 
-    // Daily totals for record calculations
+    // Ежедневные итоги для расчёта рекордов
     const dailyTotals = new Map<string, number>()
     entries.forEach(e => {
       if (!e.entryDate) return
@@ -173,7 +173,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       dailyTotals.set(dateStr, (dailyTotals.get(dateStr) || 0) + e.value)
     })
     
-    // Find max day value and record days count
+    // Поиск максимального дневного значения и количества дней-рекордов
     let maxDayValue = 0
     let recordDays = 0
     dailyTotals.forEach((value) => {
@@ -185,7 +185,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       }
     })
 
-    // Average interval calculation
+    // Расчёт среднего интервала
     const sortedDates = [...entries]
       .filter(e => e.entryDate)
       .map(e => new Date(e.entryDate))
@@ -203,7 +203,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
     const avgInterval = intervalCount > 0 ? Math.round(totalInterval / intervalCount) : 0
 
-    // Streak calculation
+    // Расчёт серии
     const uniqueDates = Array.from(dailyTotals.keys()).sort()
     let currentStreak = 0
     let maxStreak = 0
@@ -230,7 +230,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
     maxStreak = Math.max(maxStreak, tempStreak)
     
-    // Check if streak is current (last entry was today or yesterday)
+    // Проверка, является ли серия текущей (последняя запись сегодня или вчера)
     if (uniqueDates.length > 0) {
       const lastEntryDate = uniqueDates[uniqueDates.length - 1]
       if (lastEntryDate === today || lastEntryDate === yesterday) {
@@ -252,7 +252,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
   }, [entries, metric])
 
-  // Calculate progress
+  // Расчёт прогресса
   const progress = useMemo(() => {
     const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
     const sourceValue = hasPeriodicity ? stats.periodValue : stats.totalValue
@@ -261,7 +261,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     const percent = Math.round(Math.min((current / target) * 100, 100))
     const remaining = Math.max(0, target - current)
 
-    // Calculate expected progress based on resetPeriodicity
+    // Расчёт ожидаемого прогресса на основе периодичности сброса
     const now = new Date()
     let daysInPeriod = 7 // default weekly
     let daysElapsed = now.getDay() || 7
@@ -292,7 +292,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     const aheadBy = Math.max(0, percent - expectedProgress)
     const daysRemaining = Math.max(0, daysInPeriod - daysElapsed)
 
-    // Calculate period start and end dates
+    // Расчёт дат начала и окончания периода
     let startDate = new Date()
     let endDate = new Date()
 
@@ -337,14 +337,14 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
   }, [stats, metric])
 
-  // Get date range for chart
+  // Получение диапазона дат для графика
   const getDateRange = () => {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
     
     switch (selectedPeriod) {
       case 'week': {
-        // Get week view (current week)
+        // Получение представления недели (текущая неделя)
         const dayOfWeek = currentDate.getDay() || 7
         const start = new Date(currentDate)
         start.setDate(currentDate.getDate() - dayOfWeek + 1)
@@ -374,7 +374,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
   const { start: periodStart, end: periodEnd } = getDateRange()
 
-  // Chart data generation
+  // Генерация данных графика
   const chartData = useMemo(() => {
     const dailyTotals = new Map<string, number>()
     entries.forEach(e => {
@@ -386,7 +386,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     })
 
     if (selectedPeriod === 'week') {
-      // Week view: day by day for current week
+      // Представление недели: по дням для текущей недели
       const data = []
       for (let i = 0; i < 7; i++) {
         const date = new Date(periodStart)
@@ -401,7 +401,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       }
       return data
     } else if (selectedPeriod === 'month') {
-      // Month view: day by day with proper labels
+      // Представление месяца: по дням с правильными подписями
       const data = []
       for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
         const dateStr = toLocalDateStr(d)
@@ -413,10 +413,10 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           sortKey: d.getTime()
         })
       }
-      // Sort chronologically
+      // Сортировка по хронологии
       return data.sort((a, b) => a.sortKey - b.sortKey)
     } else {
-      // Year view: aggregate by month
+      // Представление года: агрегация по месяцам
       const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
       const data = []
       const year = periodStart.getFullYear()
@@ -435,23 +435,23 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           sortKey: month
         })
       }
-      // Sort chronologically
+      // Сортировка по хронологии
       return data.sort((a, b) => a.sortKey - b.sortKey)
     }
   }, [entries, periodStart, periodEnd, selectedPeriod])
 
-  // Cumulative chart data for counters
+  // Накопительные данные графика для счётчиков
   const cumulativeChartData = useMemo(() => {
     if (metric.type === 'simple_habit') return []
 
-    // Get all entries sorted by date
+    // Получение всех записей, отсортированных по дате
     const sortedEntries = [...entries]
       .filter(e => e.entryDate)
       .map(e => ({ ...e, entryDate: new Date(e.entryDate) }))
       .filter(e => !isNaN(e.entryDate.getTime()))
       .sort((a, b) => a.entryDate.getTime() - b.entryDate.getTime())
 
-    // Calculate cumulative value BEFORE the period starts (from all previous entries)
+    // Расчёт накопительного значения ДО начала периода
     let cumulative = 0
     const periodStartTime = periodStart.getTime()
 
@@ -463,20 +463,20 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       }
     }
 
-    // Save initial cumulative (all entries before this period)
+    // Сохранение начального накопления (все записи до этого периода)
     const initialCumulative = cumulative
 
-    // Filter entries within current period
+    // Фильтрация записей в пределах текущего периода
     const periodEntries = sortedEntries.filter(e => {
       if (!e.entryDate) return false
       const entryDate = new Date(e.entryDate)
       return !isNaN(entryDate.getTime()) && entryDate >= periodStart && entryDate <= periodEnd
     })
 
-    // Create cumulative data starting with pre-period total
+    // Создание накопительных данных, начиная с суммы до периода
     const dailyCumulative = new Map<string, number>()
 
-    // Process entries within the period
+    // Обработка записей в пределах периода
     periodEntries.forEach(entry => {
       if (!entry.entryDate) return
       const entryDate = new Date(entry.entryDate)
@@ -486,16 +486,16 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       dailyCumulative.set(dateStr, cumulative)
     })
     
-    // Generate chart data based on period
+    // Генерация данных графика на основе периода
     const data = []
-    // Initialize with pre-period cumulative (all previous entries)
+    // Инициализация с накоплением до периода (все предыдущие записи)
     let lastCumulative = initialCumulative
     if (selectedPeriod === 'week') {
       for (let i = 0; i < 7; i++) {
         const date = new Date(periodStart)
         date.setDate(periodStart.getDate() + i)
         const dateStr = toLocalDateStr(date)
-        // Carry forward last cumulative value if no entry for this day
+        // Перенос последнего накопленного значения, если нет записи за этот день
         const dayValue = dailyCumulative.get(dateStr)
         if (dayValue !== undefined) {
           lastCumulative = dayValue
@@ -509,7 +509,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     } else if (selectedPeriod === 'month') {
       for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
         const dateStr = toLocalDateStr(d)
-        // Carry forward last cumulative value if no entry for this day
+        // Перенос последнего накопленного значения, если нет записи за этот день
         const dayValue = dailyCumulative.get(dateStr)
         if (dayValue !== undefined) {
           lastCumulative = dayValue
@@ -523,7 +523,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       }
       data.sort((a, b) => a.sortKey - b.sortKey)
     } else {
-      // Year view - cumulative by month
+      // Представление года - накопление по месяцам
       const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
       const year = periodStart.getFullYear()
       
@@ -531,7 +531,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
         const monthStart = new Date(year, month, 1)
         const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999)
         
-        // Get cumulative value at end of month (including previous periods)
+        // Получение накопленного значения на конец месяца (включая предыдущие периоды)
         let monthCumulative = initialCumulative
         for (const entry of periodEntries) {
           if (!entry.entryDate) continue
@@ -555,14 +555,14 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     return data
   }, [entries, periodStart, periodEnd, selectedPeriod, metric.type])
 
-  // Calculate chart statistics
+  // Расчёт статистики графика
   const chartStats = useMemo(() => {
     const values = chartData.map(d => d.value)
     const total = values.reduce((sum, v) => sum + v, 0)
     const activeDays = values.filter(v => v !== 0).length
     const average = activeDays > 0 ? (total / activeDays).toFixed(2).replace('.', ',') : '0'
     
-    // Calculate trend (compare with previous period)
+    // Расчёт тренда (сравнение с предыдущим периодом)
     const { start: prevStart, end: prevEnd } = getPreviousPeriodRange()
     const prevDailyTotals = new Map<string, number>()
     entries.forEach(e => {
@@ -589,7 +589,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     return { total, activeDays, average, trendPercent: Math.abs(trendPercent).toFixed(2).replace('.', ','), trendDirection }
   }, [chartData, entries, selectedPeriod, currentDate])
 
-  // Helper to get previous period range for trend calculation
+  // Вспомогательная функция для получения диапазона предыдущего периода
   function getPreviousPeriodRange() {
     const duration = periodEnd.getTime() - periodStart.getTime()
     const prevEnd = new Date(periodStart.getTime() - 1)
@@ -597,7 +597,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     return { start: prevStart, end: prevEnd }
   }
 
-  // Calendar data
+  // Данные календаря
   const calendarData = useMemo(() => {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
@@ -608,12 +608,12 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
 
     const days: Array<{ date: number; value: number; hasEntry: boolean; isToday: boolean } | null> = []
     
-    // Empty cells before first day (Monday start)
+    // Пустые ячейки перед первым днём (начало с понедельника)
     for (let i = 1; i < startWeekday; i++) {
       days.push(null)
     }
 
-    // Calculate daily values
+    // Расчёт ежедневных значений
     const dailyTotals = new Map<number, number>()
     entries.forEach(e => {
       if (!e.entryDate) return
@@ -637,14 +637,14 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       })
     }
 
-    // Calculate monthly stats
+    // Расчёт ежемесячной статистики
     const monthTotal = Array.from(dailyTotals.values()).reduce((sum, v) => sum + v, 0)
     const goalAchievedDays = Array.from(dailyTotals.values()).filter(v => v >= (metric.targetValue || 1)).length
 
     return { days, monthTotal, goalAchievedDays }
   }, [entries, currentDate, metric.targetValue])
 
-  // Navigate periods
+  // Навигация по периодам
   const navigatePeriod = (direction: number) => {
     const newDate = new Date(currentDate)
     if (selectedPeriod === 'week') {
@@ -657,7 +657,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     setCurrentDate(newDate)
   }
 
-  // Format date range for display
+  // Форматирование диапазона дат для отображения
   const formatDateRange = () => {
     if (selectedPeriod === 'week') {
       const end = new Date(periodStart)
@@ -672,7 +672,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     return ''
   }
 
-  // Handle add entry
+  // Обработка добавления записи
   const handleAddEntry = () => {
     setEntryMode('add')
     setShowEntryModal(true)
@@ -683,7 +683,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     setShowEntryModal(true)
   }
 
-  // Handle quick add/subtract with fixed value
+  // Обработка быстрого добавления/вычитания с фиксированным значением
   const handleQuickAdd = async () => {
     const stepValue = metric.stepValue ?? 1
     const currentTotal = stats.totalValue
@@ -732,15 +732,15 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     }
   }
 
-  // Check if this is a simple habit (checkbox-style)
+  // Проверка, является ли это простой привычкой (в стиле чекбокса)
   const isSimpleHabit = metric.type === 'simple_habit'
 
-  // Handle simple habit toggle (check/uncheck for today)
+  // Обработка переключения простой привычки (отметка/снятие на сегодня)
   const handleSimpleHabitToggle = async () => {
     const today = new Date()
     const todayStr = toLocalDateStr(today)
     
-    // Check if already completed today
+    // Проверка, уже выполнено ли сегодня
     const todayEntry = entries.find(e => {
       if (!e.entryDate) return false
       const entryDate = new Date(e.entryDate)
@@ -748,16 +748,16 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     })
     
     if (todayEntry) {
-      // Already completed - do nothing or could uncheck
-      // For now, just close the modal
+      // Уже выполнено - ничего не делать или снять отметку
+      // Пока просто закрыть модальное окно
       onClose()
     } else {
-      // Create a simple entry
+      // Создание простой записи
       await createMetricEntry(metric.id, 1, 'Выполнено')
     }
   }
 
-  // Top action buttons
+  // Кнопки верхнего действия
   const actionButtons = [
     { id: 'minus', icon: Minus, label: `${metric.stepValue ?? 1}`, onClick: handleQuickSubtract, color: 'text-red-600' },
     { id: 'record', icon: FileText, label: 'Запись', onClick: () => setShowEntryModal(true), color: 'text-gray-600' },
@@ -766,7 +766,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     { id: 'history', icon: History, label: 'История', onClick: () => setViewType('history'), color: 'text-gray-600' },
   ]
 
-  // Simple Habit View Component
+  // Компонент просмотра простой привычки
   const SimpleHabitView = () => {
     const today = new Date()
     const todayStr = toLocalDateStr(today)
@@ -776,7 +776,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       return !isNaN(entryDate.getTime()) && toLocalDateStr(entryDate) === todayStr
     })
     
-    // Calculate streak
+    // Расчёт серии
     const sortedDates = [...entries]
       .filter(e => e.entryDate)
       .map(e => new Date(e.entryDate))
@@ -789,7 +789,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
     
     for (const dateStr of sortedDates) {
       if (!lastDate) {
-        // First entry - check if it's today or yesterday
+        // Первая запись - проверка, сегодня или вчера
         const entryDate = new Date(dateStr)
         const daysDiff = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24))
         if (daysDiff <= 1) {
@@ -797,7 +797,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
           lastDate = dateStr
         }
       } else {
-        // Check if consecutive
+        // Проверка на последовательность
         const last = new Date(lastDate)
         const current = new Date(dateStr)
         const diffDays = Math.floor((last.getTime() - current.getTime()) / (1000 * 60 * 60 * 24))

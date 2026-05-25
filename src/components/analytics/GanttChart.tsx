@@ -52,7 +52,7 @@ export function GanttChart({ data, height = 500, onItemClick }: GanttChartProps)
   const cellWidth = 28
   const nameW = 220
 
-  // Separate goals and tasks, build hierarchy
+  // Разделение целей и задач, построение иерархии
   const { goals, tasksByGoal, orphanTasks } = useMemo(() => {
     const goalsList: (GanttItem & { duration: number; sk: keyof typeof COLORS; leftPct: number; widthPct: number })[] = []
     const tasksMap: Record<string, (GanttItem & { duration: number; sk: keyof typeof COLORS; leftPct: number; widthPct: number })[]> = {}
@@ -85,7 +85,7 @@ export function GanttChart({ data, height = 500, onItemClick }: GanttChartProps)
       }
     })
 
-    // Attach orphan tasks
+    // Присоединение задач без родителя
     const goalNames = new Set(goalsList.map(g => g.name))
     Object.entries(tasksMap).forEach(([key, tasks]) => {
       if (key === '__orphan__' || !goalNames.has(key)) {
@@ -94,7 +94,7 @@ export function GanttChart({ data, height = 500, onItemClick }: GanttChartProps)
       }
     })
 
-    // Sort
+    // Сортировка
     goalsList.sort((a, b) => order[a.sk] - order[b.sk])
     Object.values(tasksMap).forEach(t => t.sort((a, b) => order[a.sk] - order[b.sk]))
     orphans.sort((a, b) => order[a.sk] - order[b.sk])
@@ -111,7 +111,7 @@ export function GanttChart({ data, height = 500, onItemClick }: GanttChartProps)
     })
   }, [])
 
-  // Expand all goals with tasks by default on data change
+  // Разворачивание всех целей с задачами по умолчанию при изменении данных
   useMemo(() => {
     const hasTasks = new Set(data.filter(d => d.type === 'task').map(d => d.goalName).filter(Boolean))
     const toExpand = new Set(goals.filter(g => hasTasks.has(g.name)).map(g => g.id))

@@ -27,12 +27,12 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
   const [dragOverSlot, setDragOverSlot] = useState<{ day: number; hour: number } | null>(null)
 
-  // Calculate week days
+  // Расчёт дней недели
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
   }, [currentWeekStart])
 
-  // Get tasks with time for a specific day
+  // Получение задач со временем для конкретного дня
   const getTimedItemsForDay = (date: Date): Array<(Task | Metric) & { 
     type: 'task' | 'habit'
     startHour: number
@@ -48,7 +48,7 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
       endTime: string
     }> = []
 
-    // Tasks with time
+    // Задачи со временем
     tasks.forEach(task => {
       if (task.dueDate && isSameDay(parseISO(task.dueDate.toString()), date)) {
         if (task.startTime && task.endTime) {
@@ -66,16 +66,16 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
       }
     })
 
-    // Habits (metrics) with scheduled time
+    // Привычки (метрики) с запланированным временем
     metrics.forEach(metric => {
       if (metric.type === 'habit') {
-        // Check if habit has scheduled time and should appear on this date
+        // Проверка, есть ли у привычки запланированное время для этой даты
         const todayEntry = metricEntries.find(e => {
           const entryDate = e.entryDate instanceof Date ? e.entryDate : new Date(e.entryDate)
           return e.metricId === metric.id && isSameDay(entryDate, date)
         })
         
-        // Show habit if it has scheduled time for this day or has entry today
+        // Показ привычки, если у неё есть время для этого дня или запись сегодня
         if (metric.scheduledTime || todayEntry) {
           const [hourStr, minuteStr] = (metric.scheduledTime || '09:00').split(':')
           const hour = parseInt(hourStr, 10)
@@ -109,7 +109,7 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
     })
   }
 
-  // Drag and drop handlers
+  // Обработчики перетаскивания
   const handleDragStart = (task: Task) => {
     setDraggedTask(task)
   }
@@ -130,14 +130,14 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
     const targetDate = weekDays[dayIndex]
     if (!targetDate) return
 
-    // Calculate new times based on drop position
+    // Расчёт нового времени на основе позиции сброса
     const duration = draggedTask.duration || 60 // default 1 hour
     const newStartTime = `${String(hour).padStart(2, '0')}:00`
     const endHour = hour + Math.floor(duration / 60)
     const endMinutes = duration % 60
     const newEndTime = `${String(endHour).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`
 
-    // Update task with new date and time
+    // Обновление задачи с новой датой и временем
     const newDueDate = setMinutes(setHours(targetDate, hour), 0)
     
     updateTask(draggedTask.id, { 
@@ -150,7 +150,7 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
     setDragOverSlot(null)
   }
 
-  // Calculate position for an item
+  // Расчёт позиции для элемента
   const getItemStyle = (item: { startHour: number; endHour: number }) => {
     const hourHeight = 60 // pixels per hour
     const top = item.startHour * hourHeight
@@ -158,10 +158,10 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
     return { top: `${top}px`, height: `${height - 2}px` }
   }
 
-  // Today's date for highlighting
+  // Сегодняшняя дата для выделения
   const today = useMemo(() => new Date(), [])
 
-  // Get current time position
+  // Получение текущей позиции времени
   const currentTimePosition = useMemo(() => {
     const currentDayIndex = weekDays.findIndex(d => isSameDay(d, today))
     if (currentDayIndex === -1) return null
@@ -302,7 +302,7 @@ export function WeeklyTimelineView({ className }: WeeklyTimelineViewProps) {
                       )}
                       style={getItemStyle(item)}
                       onClick={(e) => {
-                        // Prevent edit when clicking checkbox
+                        // Предотвращение редактирования при нажатии на чекбокс
                         if ((e.target as HTMLElement).closest('button')) return
                         if (item.type === 'task') {
                           setEditingTask(item as Task)

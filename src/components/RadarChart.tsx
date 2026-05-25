@@ -24,7 +24,7 @@ export function SkillsRadarChart({ className, showTasks = true, showGoals = true
   const data = useMemo(() => {
     const categoryData = new Map<string, RadarDataPoint>()
 
-    // Initialize with all categories
+    // Инициализация со всеми категориями
     categories.forEach(category => {
       categoryData.set(category.name, {
         category: category.name,
@@ -36,7 +36,7 @@ export function SkillsRadarChart({ className, showTasks = true, showGoals = true
       })
     })
 
-    // Calculate goal stats by category
+    // Расчёт статистики целей по категориям
     goals.forEach(goal => {
       const category = categories.find(c => c.id === goal.categoryId)
       if (!category) return
@@ -59,7 +59,7 @@ export function SkillsRadarChart({ className, showTasks = true, showGoals = true
       categoryData.set(category.name, existing)
     })
 
-    // Add task stats (inherit category from goal if task has no direct category)
+    // Добавление статистики задач (наследование категории от цели)
     tasks.forEach(task => {
       let categoryId = task.categoryId
       if (!categoryId && task.goalId) {
@@ -157,7 +157,7 @@ export function SkillsRadarChart({ className, showTasks = true, showGoals = true
   )
 }
 
-// Advanced Multi-Metric Radar Chart
+// Расширенная многометрическая лепестковая диаграмма
 interface MetricRadarDataPoint {
   metric: string
   value: number
@@ -259,7 +259,7 @@ export function MetricRadarChart({ metricIds, className }: MetricRadarChartProps
   )
 }
 
-// Complex Multi-Dimensional Analysis Chart
+// Сложная многомерная аналитическая диаграмма
 interface AnalysisDataPoint {
   dimension: string
   planning: number
@@ -277,22 +277,22 @@ export function AnalysisRadarChart({ className }: AnalysisRadarChartProps) {
   const { goals, tasks, metrics, metricEntries } = useApiDataStore()
 
   const data = useMemo((): AnalysisDataPoint[] => {
-    // Calculate planning score (goal setting quality)
+    // Расчёт оценки планирования (качество постановки целей)
     const planningScore = goals.length > 0 ? 
       Math.round((goals.filter(g => g.description && g.dueDate).length / goals.length) * 100) : 0
 
-    // Calculate execution score (task completion rate)
+    // Расчёт оценки выполнения (процент завершения задач)
     const executionScore = tasks.length > 0 ?
       Math.round((tasks.filter(t => t.completed).length / tasks.length) * 100) : 0
 
-    // Calculate consistency score (metric regularity)
+    // Расчёт оценки последовательности (регулярность метрик)
     const consistencyScore = metrics.length > 0 ? 
       Math.round((metrics.filter(m => {
         const entries = metricEntries.filter(e => e.metricId === m.id)
         return entries.length > 0
       }).length / metrics.length) * 100) : 0
 
-    // Calculate efficiency score (overall progress)
+    // Расчёт оценки эффективности (общий прогресс)
     const efficiencyScore = goals.length > 0 ?
       Math.round((goals.reduce((sum, g) => sum + g.progress, 0) / goals.length)) : 0
 

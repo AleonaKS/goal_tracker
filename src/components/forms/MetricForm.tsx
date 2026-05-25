@@ -138,7 +138,7 @@ export function MetricForm({ initialData, goalId, onSubmit, onCancel }: MetricFo
               type="button"
               onClick={() => {
                 setValue('type', 'simple_habit')
-                // Auto-set defaults for simple habit
+                // Автоматическая установка значений по умолчанию для простой привычки
                 setValue('targetValue', 1)
                 setValue('inputMode', 'fixed_step')
                 setValue('stepValue', 1)

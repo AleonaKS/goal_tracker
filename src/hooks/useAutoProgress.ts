@@ -60,7 +60,7 @@ export function useAutoProgress() {
     
     const calculatedProgress = calculateGoalProgress(goal)
     
-    // Calculate expected completion date
+    // Расчёт ожидаемой даты завершения
     let expectedCompletionDate: Date | null = null
     if (goal.progressCalculation === 'by_metric' && goal.progressMetricId) {
       const metric = metrics.find(m => m.id === goal.progressMetricId)
@@ -72,14 +72,14 @@ export function useAutoProgress() {
       expectedCompletionDate = calculateExpectedCompletionDate(goal, metricEntries)
     }
     
-    // Calculate status based on progress and deadline
+    // Расчёт статуса на основе прогресса и дедлайна
     let newStatus = goal.status
     if (goal.dueDate) {
       const deadline = new Date(goal.dueDate)
       newStatus = calculateGoalStatus(deadline, calculatedProgress)
     }
     
-    // Only update if changed
+    // Обновление только при изменении
     const hasChanges = (
       calculatedProgress !== goal.progress || 
       newStatus !== goal.status ||
@@ -197,12 +197,12 @@ export function useAutoProgress() {
       const stats = calculateMetricStats(metric, entries)
       
       if (stats) {
-        // Update progress in metrics table (only progress field)
+        // Обновление прогресса в таблице метрик (только поле progress)
         if (stats.progress !== metric.progress) {
           await updateMetric(metric.id, { progress: stats.progress })
         }
         
-        // Update analytics in metric_analytics_cache table
+        // Обновление аналитики в таблице metric_analytics_cache
         if (
           stats.currentStreak !== metric.currentStreak ||
           stats.maxStreak !== metric.maxStreak
@@ -236,7 +236,7 @@ export function useAutoProgress() {
   const checkAndAwardAchievements = useCallback(async () => {
     if (!user) return
     
-    // Calculate current stats for achievement checking
+    // Расчёт текущей статистики для проверки достижений
     const goalsCompleted = goals.filter(g => g.status === 'completed').length
     const tasksCompleted = tasks.filter(t => t.completed).length
     const metricsTargetsReached = metrics.filter(m => {
@@ -245,7 +245,7 @@ export function useAutoProgress() {
       return totalValue >= m.targetValue
     }).length
     
-    // Calculate max habit streak across all metrics
+    // Расчёт максимальной серии привычек по всем метрикам
     let maxHabitStreak = 0
     for (const metric of metrics) {
       if (metric.type === 'habit') {
@@ -271,7 +271,7 @@ export function useAutoProgress() {
     try {
       const newAchievements = await checkAchievements(user.id, stats)
       
-      // Create new achievements in the store
+      // Создание новых достижений в сторе
       for (const achievement of newAchievements) {
         await createAchievement({
           userId: user.id,
@@ -297,11 +297,11 @@ export function useAutoProgress() {
     await checkAndAwardAchievements()
   }, [checkAndResetMetrics, updateAllMetricsStats, updateAllGoalsProgress, checkAndAwardAchievements])
 
-  // Keep latest run function in ref so interval always uses current data
+  // Сохранение последней функции в ref для актуальности данных в интервале
   const runRef = useRef(runAutoCalculations)
   runRef.current = runAutoCalculations
 
-  // Run calculations on mount (once user data is available) and periodically
+  // Запуск вычислений при монтировании и периодически
   useEffect(() => {
     if (isRunningRef.current) return
 
@@ -312,20 +312,16 @@ export function useAutoProgress() {
       } finally {
         isRunningRef.current = false
       }
-    }
-
-    // Initial calculation on mount
+    } 
     if (user) {
       executeCalculations()
     }
-
-    // Set up interval for periodic checks (every 5 minutes)
     const interval = setInterval(() => {
       if (!isRunningRef.current) {
         executeCalculations()
       }
     }, 5 * 60 * 1000)
-
+    
     return () => clearInterval(interval)
   }, [user])
 

@@ -44,7 +44,7 @@ export function MetricEntryModal({ isOpen, onClose, metric, mode = 'quick' }: Me
       const [y, m, d] = entryDate.split('-').map(Number)
       await createMetricEntryWithGamification(metric.id, entryValue, note.trim() || undefined, new Date(y, m - 1, d))
 
-      // Reset form
+      // Сброс формы
       setValue('')
       setFinalValue('')
       setNote('')

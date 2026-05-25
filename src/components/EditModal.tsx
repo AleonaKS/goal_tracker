@@ -24,7 +24,7 @@ export function EditModal({ isOpen, onClose, entity, entityType, additionalData 
 
   const handleSubmit = () => {
     setIsSubmitting(true)
-    // Form submission is handled by the form components
+    // Отправка формы обрабатывается компонентами формы
     setTimeout(() => {
       setIsSubmitting(false)
       onClose()

@@ -3,9 +3,9 @@ import { isDemoMode, demoUser } from './demo'
 import * as api from './supabase-api'
 import type { User } from '@/types'
 
-// Helper function to ensure user exists in users table
+// Вспомогательная функция для проверки существования пользователя
 async function ensureUserExists(authUser: any) {
-  // Check if user exists by id
+  // Проверка существования пользователя по id
   const { data: existingUserById, error: selectError } = await getClient()
     .from('users')
     .select('id, email')
@@ -16,12 +16,12 @@ async function ensureUserExists(authUser: any) {
     console.error('Error checking user existence by id:', selectError)
   }
   
-  // User already exists with this id
+  // Пользователь уже существует с этим id
   if (existingUserById) {
     return
   }
   
-  // Check if user exists by email (different auth id but same email)
+  // Проверка пользователя по email (другой auth id, но тот же email)
   const { data: existingUserByEmail, error: emailSelectError } = await getClient()
     .from('users')
     .select('id, email')
@@ -32,7 +32,7 @@ async function ensureUserExists(authUser: any) {
     console.error('Error checking user existence by email:', emailSelectError)
   }
   
-  // If user exists with same email but different id, delete old record and create new one
+  // Если пользователь с тем же email, но другим id, удалить старую запись и создать новую
   // with correct id, then migrate all related data
   if (existingUserByEmail) {
     const oldUserId = existingUserByEmail.id
@@ -40,7 +40,7 @@ async function ensureUserExists(authUser: any) {
     
     console.log(`Migrating user data from ${oldUserId} to ${newUserId}`)
     
-    // First, migrate all related data to new user_id (before deleting old user record)
+    // Сначала перенести все связанные данные на новый user_id
     const tablesToUpdate = [
       'goals', 'tasks', 'metrics', 'categories', 'stages', 
       'metric_entries', 'user_achievements', 'favorite_filters'
@@ -54,14 +54,14 @@ async function ensureUserExists(authUser: any) {
       
       if (migrateError) {
         console.warn(`Warning: could not migrate ${table}:`, migrateError)
-        // Don't throw - continue with other tables
+        // Не выбрасывать ошибку - продолжить с другими таблицами
       } else {
         console.log(`Migrated ${table} to new user_id`)
       }
     }
     
-    // Delete old user record and insert new one with correct id
-    // We need to do this because updating PK can fail due to FK constraints
+    // Удаление старой записи пользователя и вставка новой с правильным id
+    // Это необходимо, т.к. обновление PK может не сработать из-за FK ограничений
     const { data: oldUserData } = await getClient()
       .from('users')
       .select('*')
@@ -69,7 +69,7 @@ async function ensureUserExists(authUser: any) {
       .single()
     
     if (oldUserData) {
-      // Delete old record
+      // Удаление старой записи
       const { error: deleteError } = await getClient()
         .from('users')
         .delete()
@@ -77,10 +77,10 @@ async function ensureUserExists(authUser: any) {
       
       if (deleteError) {
         console.error('Error deleting old user record:', deleteError)
-        // Continue anyway - try to insert new record
+        // Продолжить - попробовать вставить новую запись
       }
       
-      // Insert new record with correct id
+      // Вставка новой записи с правильным id
       const { error: insertError } = await getClient()
         .from('users')
         .insert({
@@ -95,7 +95,7 @@ async function ensureUserExists(authUser: any) {
         })
       
       if (insertError) {
-        // If insert failed due to duplicate, it means the record already exists
+        // Если вставка не удалась из-за дубликата, запись уже существует
         if (insertError.code === '23505') {
           console.log('User record with new id already exists')
         } else {
@@ -110,7 +110,7 @@ async function ensureUserExists(authUser: any) {
     return
   }
   
-  // Create new user record
+  // Создание новой записи пользователя
   const { error: insertError } = await getClient()
     .from('users')
     .insert({
@@ -122,7 +122,7 @@ async function ensureUserExists(authUser: any) {
     })
   
   if (insertError) {
-    // Handle duplicate key violation gracefully
+    // Обработка нарушения уникальности ключа
     if (insertError.code === '23505') {
       console.warn('User record already exists (duplicate key), skipping creation')
       return
@@ -134,7 +134,7 @@ async function ensureUserExists(authUser: any) {
 
 export async function signIn(email: string, password: string) {
   if (isDemoMode()) {
-    // Demo mode - accept any email/password
+    // Демо-режим - принимает любой email/пароль
     if (email === 'demo@example.com' && password === 'demo123') {
       return { user: demoUser, session: { user: demoUser } }
     }
@@ -148,7 +148,7 @@ export async function signIn(email: string, password: string) {
   
   if (error) throw error
   
-  // Ensure user exists in users table
+  // Проверка существования пользователя в таблице users
   if (data.user) {
     await ensureUserExists(data.user)
   }
@@ -158,7 +158,7 @@ export async function signIn(email: string, password: string) {
 
 export async function signUp(email: string, password: string, username: string) {
   if (isDemoMode()) {
-    // Demo mode - simulate signup
+    // Демо-режим - имитация регистрации
     return { user: { ...demoUser, email, login: username }, session: { user: demoUser } }
   }
 
@@ -174,7 +174,7 @@ export async function signUp(email: string, password: string, username: string) 
   
   if (error) throw error
   
-  // Create user record in users table after successful registration
+  // Создание записи пользователя после успешной регистрации
   if (data.user) {
     await ensureUserExists(data.user)
   }
@@ -184,7 +184,7 @@ export async function signUp(email: string, password: string, username: string) 
 
 export async function signOut() {
   if (isDemoMode()) {
-    // Demo mode - just return success
+    // Демо-режим - просто вернуть успех
     return
   }
 
@@ -194,8 +194,8 @@ export async function signOut() {
 
 export async function getCurrentUser() {
   if (isDemoMode()) {
-    // Demo mode - return demo user directly
-    // The service role client should handle database operations
+    // Демо-режим - вернуть демо-пользователя напрямую
+    // Клиент с ролью service должен обрабатывать операции с БД
     console.log('Demo mode: returning demo user')
     return demoUser
   }
@@ -207,7 +207,7 @@ export async function getCurrentUser() {
 export async function getUserProfile(userId: string): Promise<User | null> {
   console.log('[Auth] getUserProfile called for userId:', userId)
   
-  // Always try to get fresh data from database
+  // Всегда пытаться получить свежие данные из БД
   const { data, error } = await getClient()
     .from('users')
     .select('*')
@@ -217,7 +217,7 @@ export async function getUserProfile(userId: string): Promise<User | null> {
   if (error) {
     console.error('[Auth] Error fetching user profile:', error)
     if (isDemoMode()) {
-      // Demo mode fallback - return demo user with updated totalPoints
+      // Запасной вариант демо-режима - вернуть пользователя с обновлёнными очками
       return { ...demoUser, id: userId }
     }
     throw error
@@ -228,7 +228,7 @@ export async function getUserProfile(userId: string): Promise<User | null> {
     return null
   }
   
-  // Map database fields to TypeScript interface
+  // Сопоставление полей БД с TypeScript интерфейсом
   const user: User = {
     id: data.id,
     login: data.login,
@@ -248,7 +248,7 @@ export async function getUserProfile(userId: string): Promise<User | null> {
 
 export async function onAuthStateChange(callback: (user: any) => void) {
   if (isDemoMode()) {
-    // Demo mode - immediately call callback with demo user
+    // Демо-режим - немедленный вызов колбэка с демо-пользователем
     setTimeout(() => callback(demoUser), 0)
     return { data: { subscription: { unsubscribe: () => {} } } }
   }

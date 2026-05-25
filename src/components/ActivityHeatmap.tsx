@@ -31,15 +31,15 @@ const SIZE_CONFIGS = {
 const MONTH_LABELS = ['янв.', 'февр.', 'март', 'апр.', 'май', 'июнь', 'июль', 'авг.', 'сен.', 'окт.', 'ноя.', 'дек.']
 const WEEK_DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-// Generate intensity colors based on metric color
+// Генерация цветов интенсивности на основе цвета метрики
 const generateIntensityColors = (baseColor: string): string[] => {
-  // Convert hex to RGB
+  // Преобразование HEX в RGB
   const hex = baseColor.replace('#', '')
   const r = parseInt(hex.substr(0, 2), 16)
   const g = parseInt(hex.substr(2, 2), 16)
   const b = parseInt(hex.substr(4, 2), 16)
   
-  // Generate 5 intensity levels from light to dark
+  // Генерация 5 уровней интенсивности от светлого к тёмному
   return [
     '#ebedf0', // 0 - no activity (gray background)
     `rgba(${r}, ${g}, ${b}, 0.2)`, // 1 - very light
@@ -67,34 +67,34 @@ export function ActivityHeatmap({
   
   const config = SIZE_CONFIGS[size]
   
-  // Generate intensity colors based on the metric color
+  // Генерация цветов интенсивности на основе цвета метрики
   const INTENSITY_COLORS = useMemo(() => generateIntensityColors(color), [color])
 
-  // Generate last 52 weeks of data (GitHub style) - right to left
+  // Генерация данных за последние 52 недели (в стиле GitHub) - справа налево
   const heatmapData = useMemo(() => {
     const today = new Date()
-    // Find the start of current week (Monday)
+    // Поиск начала текущей недели (понедельник)
     const currentDay = today.getDay()
     const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1
     const thisWeekStart = new Date(today)
     thisWeekStart.setDate(today.getDate() - daysFromMonday)
     
-    // Create a map of data for quick lookup (aggregate by date)
+    // Создание карты данных для быстрого поиска (агрегация по дате)
     const dataMap = new Map<string, number>()
     data.forEach(d => {
       const dateStr = format(d.date, 'yyyy-MM-dd')
       dataMap.set(dateStr, (dataMap.get(dateStr) || 0) + d.value)
     })
 
-    // Find max value for intensity calculation (use aggregated daily values)
+    // Поиск максимального значения для расчёта интенсивности
     const dailyValues = Array.from(dataMap.values())
     const maxValue = dailyValues.length > 0 ? Math.max(...dailyValues, 1) : 1
     
-    // Generate weeks from oldest (left) to newest (right) - 53 weeks total
+    // Генерация недель от старых (слева) к новым (справа) - всего 53 недели
     const weeks: Array<Array<{date: Date, value: number, intensity: number}>> = []
     const allMonths: Array<{label: string, weekIndex: number}> = []
     
-    // Start from 52 weeks ago
+    // Начало с 52 недель назад
     const startDate = new Date(thisWeekStart)
     startDate.setDate(thisWeekStart.getDate() - (52 * 7))
     
@@ -113,16 +113,16 @@ export function ActivityHeatmap({
         const dateStr = format(date, 'yyyy-MM-dd')
         const value = dataMap.get(dateStr) || 0
         
-        // Calculate intensity (0-5) based on value relative to max
+        // Расчёт интенсивности (0-5) на основе значения относительно максимума
         let intensity = 0
         if (value > 0) {
-          // For small max values, use direct thresholds
+          // Для малых максимальных значений используются прямые пороги
           if (maxValue <= 3) {
             if (value === 1) intensity = 1
             else if (value === 2) intensity = 3
             else intensity = 5
           } else {
-            // For larger max values, use percentage-based thresholds
+            // Для больших максимальных значений используются процентные пороги
             const ratio = value / maxValue
             if (ratio <= 0.16) intensity = 1
             else if (ratio <= 0.33) intensity = 2
@@ -137,7 +137,7 @@ export function ActivityHeatmap({
       
       weeks.push(weekDays)
       
-      // Track all months for later filtering
+      // Отслеживание всех месяцев для последующей фильтрации
       const firstDayOfWeek = weekDays[0].date
       const month = firstDayOfWeek.getMonth()
       
@@ -150,10 +150,10 @@ export function ActivityHeatmap({
       }
     }
     
-    // Show all 12 months
+    // Показать все 12 месяцев
     const monthLabels: Array<{label: string, position: number}> = []
     
-    // Use all unique months from the data
+    // Использовать все уникальные месяцы из данных
     allMonths.forEach(month => {
       if (!monthLabels.find(m => m.label === month.label)) {
         monthLabels.push({
@@ -174,7 +174,7 @@ export function ActivityHeatmap({
     return heatmapData.weeks.flat().reduce((sum, d) => sum + d.value, 0)
   }, [heatmapData])
 
-  // Scroll to current month on mount
+  // Прокрутка к текущему месяцу при монтировании
   useEffect(() => {
     if (!scrollToCurrentMonth || !scrollRef.current) return
     const lastMonth = heatmapData.monthLabels[heatmapData.monthLabels.length - 1]
@@ -297,7 +297,7 @@ export function ActivityHeatmap({
   )
 }
 
-// Compact version for small spaces
+// Компактная версия для маленьких пространств
 export function CompactActivityHeatmap({ data }: ActivityHeatmapProps) {
   return (
     <ActivityHeatmap
@@ -308,7 +308,7 @@ export function CompactActivityHeatmap({ data }: ActivityHeatmapProps) {
   )
 }
 
-// Full version with controls
+// Полная версия с элементами управления
 export function FullActivityHeatmap({ data }: ActivityHeatmapProps) {
   return (
     <ActivityHeatmap

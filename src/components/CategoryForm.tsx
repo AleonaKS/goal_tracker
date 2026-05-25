@@ -16,7 +16,7 @@ interface CategoryFormProps {
   onCancel: () => void
 }
 
-// Icon mapping for Lucide React icons
+// Сопоставление иконок для Lucide React
 const iconMap: Record<string, string> = {
   'folder': '📁',
   'briefcase': '💼',

@@ -22,7 +22,7 @@ function formatValue(n: number, compact: boolean): string {
 }
 
 export function CategoryAnalyticsTable({ category, metrics, entries, compact = false }: CategoryAnalyticsTableProps) {
-  // Calculate statistics
+  // Расчёт статистики
   const stats = useMemo(() => {
     let total = 0
     const dailyTotals = new Map<number, number>()

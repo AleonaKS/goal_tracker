@@ -28,8 +28,6 @@ export function MetricsPage() {
     updateMetric,
     deleteMetric,
     fetchPointsHistory
-    // ИСПРАВЛЕНИЕ: Убрали isLoading чтобы избежать мигания при CRUD операциях
-    // isLoading 
   } = useApiDataStore()
 
   const [filter, setFilter] = useState<FilterType>('all')

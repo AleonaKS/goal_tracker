@@ -20,13 +20,13 @@ export function TaskSelectorModal({ isOpen, onClose, onSelectTask, onCreateNewTa
   const [selectedGoal, setSelectedGoal] = useState<string>('all')
   const [showCompleted, setShowCompleted] = useState(false)
 
-  // Filter tasks based on search and filters
+  // Фильтрация задач на основе поиска и фильтров
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
-      // Filter by completion status
+      // Фильтрация по статусу выполнения
       if (!showCompleted && task.completed) return false
       
-      // Filter by search query
+      // Фильтрация по поисковому запросу
       if (searchQuery) {
         const query = searchQuery.toLowerCase()
         const nameMatch = task.name.toLowerCase().includes(query)
@@ -35,14 +35,14 @@ export function TaskSelectorModal({ isOpen, onClose, onSelectTask, onCreateNewTa
         if (!nameMatch && !descriptionMatch && !goalMatch) return false
       }
       
-      // Filter by goal
+      // Фильтрация по цели
       if (selectedGoal !== 'all' && task.goalId !== selectedGoal) return false
       
       return true
     })
   }, [tasks, searchQuery, selectedGoal, showCompleted, goals])
 
-  // Group tasks by status
+  // Группировка задач по статусу
   const taskGroups = useMemo(() => {
     const groups = {
       unscheduled: [] as Task[], // Tasks without due date
@@ -73,7 +73,7 @@ export function TaskSelectorModal({ isOpen, onClose, onSelectTask, onCreateNewTa
   }, [filteredTasks])
 
   const handleSelectTask = (task: Task) => {
-    // If task doesn't have a due date and we have a selected date, assign it
+    // Если у задачи нет даты выполнения и есть выбранная дата, назначить её
     if (!task.dueDate && selectedDate) {
       updateTask(task.id, { dueDate: selectedDate })
     }
@@ -305,7 +305,7 @@ export function TaskSelectorModal({ isOpen, onClose, onSelectTask, onCreateNewTa
   )
 }
 
-// Task Card Component
+// Компонент карточки задачи
 interface TaskCardProps {
   task: Task
   onSelect: () => void

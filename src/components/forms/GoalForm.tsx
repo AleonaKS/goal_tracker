@@ -51,7 +51,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
   const progressCalculation = watch('progressCalculation')
   const priority = watch('priority')
 
-  // Reset deadlineValue when deadlineType changes (but not on initial render)
+  // Сброс deadlineValue при изменении deadlineType (кроме начального рендера)
   const isFirstRender = useRef(true)
   useEffect(() => {
     if (isFirstRender.current) {
@@ -63,7 +63,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
 
   const handleFormSubmit = async (data: GoalFormData) => {
     try {
-      // Use demo user ID in demo mode, otherwise use authenticated user
+      // Использовать ID демо-пользователя в демо-режиме, иначе аутентифицированного
       const effectiveUserId = isDemoMode() ? demoUser.id : (user?.id || '')
       
       console.log('GoalForm submit - userId:', effectiveUserId, 'isDemo:', isDemoMode())
@@ -84,7 +84,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
         ...(data.deadlineValue ? { deadlineValue: data.deadlineValue } : {})
       }
       
-      // Only include startDate if it's provided
+      // Включать startDate, только если он предоставлен
       if (data.startDate) {
         submitData.startDate = data.startDate
       }
@@ -100,7 +100,7 @@ export function GoalForm({ initialData, onSubmit, onCancel }: GoalFormProps) {
       onSubmit()
     } catch (error) {
       console.error('Error saving goal:', error)
-      // Error will be shown through form state
+      // Ошибка будет показана через состояние формы
     }
   }
 
