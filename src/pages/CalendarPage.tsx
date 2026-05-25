@@ -274,8 +274,7 @@ export function CalendarPage() {
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="space-y-6 pb-20">
-      <h1 className="text-2xl font-bold text-gray-900">Календарь</h1>
-
+ 
       {/* Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         {/* Period navigation */}
