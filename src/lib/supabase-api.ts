@@ -1295,11 +1295,10 @@ export async function deleteMetricEntry(id: string): Promise<void> {
 // Use updateTask to modify subtasks
 
 // Achievements (System Definitions)
-export async function getAchievements(userId: string): Promise<Achievement[]> {
+export async function getAchievements(): Promise<Achievement[]> {
   const { data, error } = await getClient()
     .from('achievements')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false })
   
   if (error) throw error

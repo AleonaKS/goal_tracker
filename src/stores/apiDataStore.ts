@@ -206,7 +206,7 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
     set(state => ({ metricEntries: [...state.metricEntries.filter(e => e.metricId !== metricId), ...transformed] }))
   }, 'Failed to fetch metric entries'),
   
-  fetchAchievements: () => withAsync(set, get, (uid) => api.getAchievements(uid), (data) => set({ achievements: data }), 'Failed to fetch achievements'),
+  fetchAchievements: () => withAsync(set, get, () => api.getAchievements(), (data) => set({ achievements: data }), 'Failed to fetch achievements'),
   
   fetchUserAchievements: () => withAsync(set, get, (uid) => api.getUserAchievements(uid), (data) => set({ userAchievements: data }), 'Failed to fetch user achievements'),
   

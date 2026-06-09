@@ -215,7 +215,7 @@ export function GamificationAnalytics() {
           </h3>
           {trendData.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={trendData}>
+              <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
@@ -227,8 +227,8 @@ export function GamificationAnalytics() {
                     color: '#fff'
                   }}
                 />
-                <Bar dataKey="points" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <Line type="monotone" dataKey="points" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-64 flex items-center justify-center text-gray-400">
@@ -292,6 +292,35 @@ export function GamificationAnalytics() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Completion Timeliness */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-green-500" />
+            Своевременность выполнения задач
+          </h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={completionData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1f2937',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                }}
+                formatter={(value: number) => [`${value} задач`, '']}
+              />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {completionData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
@@ -357,44 +386,6 @@ export function GamificationAnalytics() {
               </p>
               <p className="text-sm text-gray-600">Очков за задачу</p>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Scoring Formula Explanation */}
-      <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 border border-blue-100">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-blue-500" />
-          Формула начисления очков
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white/70 rounded-xl p-4">
-            <p className="font-semibold text-gray-900 mb-1">База</p>
-            <p className="text-2xl font-bold text-blue-600">10 очков</p>
-            <p className="text-sm text-gray-600 mt-1">За выполнение задачи</p>
-          </div>
-          <div className="bg-white/70 rounded-xl p-4">
-            <p className="font-semibold text-gray-900 mb-1">Сложность</p>
-            <p className="text-2xl font-bold text-orange-600">× 2</p>
-            <p className="text-sm text-gray-600 mt-1"> complexity × 2 очка</p>
-          </div>
-          <div className="bg-white/70 rounded-xl p-4">
-            <p className="font-semibold text-gray-900 mb-1">Вес</p>
-            <p className="text-2xl font-bold text-green-600">× 1.5</p>
-            <p className="text-sm text-gray-600 mt-1">weight × 1.5 очка</p>
-          </div>
-          <div className="bg-white/70 rounded-xl p-4">
-            <p className="font-semibold text-gray-900 mb-1">Приоритет</p>
-            <p className="text-2xl font-bold text-red-600">(6-p) × 3</p>
-            <p className="text-sm text-gray-600 mt-1">Обратный приоритет</p>
-          </div>
-        </div>
-        <div className="mt-4 p-4 bg-white/70 rounded-xl">
-          <p className="font-semibold text-gray-900 mb-2">Бонус/штраф за сроки:</p>
-          <div className="flex gap-6 text-sm">
-            <span className="text-green-600">✓ Досрочно: +20% за день (макс +100%)</span>
-            <span className="text-gray-600">○ Вовремя: без изменений</span>
-            <span className="text-red-600">✗ Просрочено: −10% за день (макс −50%)</span>
           </div>
         </div>
       </div>

@@ -2,14 +2,15 @@ import { useState, useMemo } from 'react'
 import { useApiDataStore } from '@/stores/apiDataStore'
 import { useAuthStore } from '@/stores/authStore'
 import {
-  Target, CheckCircle, Clock,
+  Info, Target, CheckCircle, Clock,
   Activity, Layers, Zap, Trophy, Star, Award, History
 } from 'lucide-react'
 import { MetricAnalyticsModal } from '@/components/MetricAnalyticsModal'
 import { SkillsRadarChart, MetricRadarChart, AnalysisRadarChart } from '@/components/RadarChart'
 import { CategoryDetailModal } from '@/components/CategoryDetailModal'
+// import { GamificationAnalytics } from '@/components/GamificationAnalytics'
 import { cn } from '@/lib/utils'
-import { DEFAULT_ACHIEVEMENTS } from '@/lib/gamification'
+import { DEFAULT_ACHIEVEMENTS, calculateLevel } from '@/lib/gamification'
 import type { Metric, Category } from '@/types'
 
 export function AnalyticsPage() {
@@ -158,13 +159,54 @@ export function AnalyticsPage() {
         </div>
         
         {gamification ? (
-          <div className="space-y-6">
+          <><div className="space-y-6">
             {/* Points Overview */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-gradient-to-br from-yellow-50 to-amber-50 p-4 rounded-xl border border-yellow-200">
                 <div className="flex items-center gap-2 mb-2">
                   <Star className="w-5 h-5 text-yellow-600" />
                   <span className="text-sm font-medium text-gray-600">Очки</span>
+                  <div className="relative group">
+                    <Info className="w-4 h-4 text-yellow-600/60 hover:text-yellow-600 cursor-help" />
+                    <div className="absolute left-0 top-full mt-2 z-50 w-[28rem] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
+                      <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-5 border border-blue-100 shadow-xl">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-blue-500" />
+                          Формула начисления очков
+                        </h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="bg-white/70 rounded-xl p-3">
+                            <p className="font-semibold text-gray-900 mb-1 text-xs">База</p>
+                            <p className="text-lg font-bold text-blue-600">10 очков</p>
+                            <p className="text-xs text-gray-600 mt-0.5">За выполнение задачи</p>
+                          </div>
+                          <div className="bg-white/70 rounded-xl p-3">
+                            <p className="font-semibold text-gray-900 mb-1 text-xs">Сложность</p>
+                            <p className="text-lg font-bold text-orange-600">× 2</p>
+                            <p className="text-xs text-gray-600 mt-0.5">complexity × 2 очка</p>
+                          </div>
+                          <div className="bg-white/70 rounded-xl p-3">
+                            <p className="font-semibold text-gray-900 mb-1 text-xs">Вес</p>
+                            <p className="text-lg font-bold text-green-600">× 1.5</p>
+                            <p className="text-xs text-gray-600 mt-0.5">weight × 1.5 очка</p>
+                          </div>
+                          <div className="bg-white/70 rounded-xl p-3">
+                            <p className="font-semibold text-gray-900 mb-1 text-xs">Приоритет</p>
+                            <p className="text-lg font-bold text-red-600">(6-p) × 3</p>
+                            <p className="text-xs text-gray-600 mt-0.5">Обратный приоритет</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-white/50">
+                          <p className="font-semibold text-gray-900 mb-2 text-xs">Бонус/штраф за сроки:</p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                            <span className="text-green-600">✓ Досрочно: +20% за день (макс +100%)</span>
+                            <span className="text-gray-600">○ Вовремя: без изменений</span>
+                            <span className="text-red-600">✗ Просрочено: −10% за день (макс −50%)</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <p className="text-2xl font-bold text-gray-900">{user?.totalPoints || 0}</p>
               </div>
@@ -174,7 +216,7 @@ export function AnalyticsPage() {
                   <Zap className="w-5 h-5 text-purple-600" />
                   <span className="text-sm font-medium text-gray-600">Уровень</span>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">{user?.level || 1}</p>
+                <p className="text-2xl font-bold text-gray-900">{calculateLevel(user?.totalPoints || 0).level}</p>
               </div>
               
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
@@ -281,7 +323,9 @@ export function AnalyticsPage() {
               </div>
             </div>
           </div>
-        ) : (
+
+          {/* <GamificationAnalytics /> */}
+        </>) : (
           <p className="text-gray-500 text-center py-4">
             Геймификация отключена. Включите её в настройках.
           </p>
