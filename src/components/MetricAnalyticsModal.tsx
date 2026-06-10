@@ -931,7 +931,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-gray-900">
                 {(() => {
-                  const isPeriodBased = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
+                  const isPeriodBased = (metric.type === 'habit' || metric.type === 'simple_habit' || metric.type === 'counter') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
                   const displayVal = isPeriodBased ? stats.periodValue : stats.totalValue
                   return <>{formatNumber(displayVal + (metric.startValue || 0))} / {formatNumber(metric.targetValue || 0)}</>
                 })()}
