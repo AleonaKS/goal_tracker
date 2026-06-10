@@ -691,11 +691,11 @@ export async function getMetrics(userId: string): Promise<Metric[]> {
     .from('metrics')
     .select(`
       *,
-      goal:goals(*)
+      goal:goals!metrics_goal_id_fkey(*)
     `)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-  
+
   if (error) throw error
   return data || []
 }
