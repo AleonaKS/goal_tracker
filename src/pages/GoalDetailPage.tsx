@@ -180,6 +180,7 @@ export function GoalDetailPage() {
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null)
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>()
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set())
+  const [timelineExpanded, setTimelineExpanded] = useState(true)
 
   const goals = useApiDataStore(state => state.goals)
   const fetchGoals = useApiDataStore(state => state.fetchGoals)
@@ -541,270 +542,301 @@ export function GoalDetailPage() {
         </div>
       </div>
 
-      {/* Stages */}
-      {goalStages.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Этапы</h2>
-            <button
-              onClick={() => setShowCreateStage(true)}
-              className="btn-secondary text-sm"
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Добавить этап
-            </button>
+      {/* Timeline Section — collapsible */}
+      <div className="card">
+        <button
+          onClick={() => setTimelineExpanded(!timelineExpanded)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Временная шкала проекта</h2>
           </div>
-          <div className="space-y-3">
-            {goalStages.map((stage) => {
-              const isExpanded = expandedStages.has(stage.id)
-              const stageTasks = allTasks.filter(t => t.stageId === stage.id)
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-full font-medium">
+              {goalStages.length} этапов · {allTasks.filter(t => t.goalId === goal.id).length} задач
+            </span>
+            {timelineExpanded ? (
+              <ChevronDown className="w-5 h-5 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            )}
+          </div>
+        </button>
 
-              return (
-                <div key={stage.id} className="border border-gray-200 rounded-lg">
-                  <div
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors group"
-                  >
-                    <button
-                      onClick={() => toggleStage(stage.id)}
-                      className="flex items-center gap-2 flex-1 text-left"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      )}
-                      <span className="font-medium text-gray-900">{stage.name}</span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">
-                        {formatDate(stage.startDate)} - {formatDate(stage.dueDate)}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedStage(stage)
-                          setShowEditStage(true)
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-200 rounded"
-                        title="Редактировать этап"
-                      >
-                        <Edit className="w-4 h-4 text-gray-500" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedStage(stage)
-                          setShowDeleteStage(true)
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded"
-                        title="Удалить этап"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
-                    </div>
+        {timelineExpanded && (
+          <div className="mt-6 space-y-6">
+            {/* Gantt Chart */}
+            {validGanttData && validGanttData.data.length > 0 && (
+              <div>
+                <div className="mb-4">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                    <span>Начало проекта</span> 
+                    <span>Завершение</span>
                   </div>
-
-                  {isExpanded && (
-                    <div className="p-3 pt-0 border-t border-gray-100">
-                      {/* Stage tasks */}
-                      <div className="mt-3 space-y-2">
-                        {stageTasks.map((task) => (
-                          <TaskItem 
-                            key={task.id} 
-                            task={task} 
-                            onToggle={async () => {
-                              console.log('Toggling task:', task.id, 'from', task.completed, 'to', !task.completed)
-                              try {
-                                await updateTask(task.id, { completed: !task.completed })
-                                console.log('Task updated successfully')
-                              } catch (error) {
-                                console.error('Failed to update task:', error)
-                              }
-                            }}
-                            onEdit={(task) => {
-                              setSelectedTask(task)
-                              setShowEditTask(true)
-                            }}
-                            onDelete={(taskId) => {
-                              setTaskToDelete(taskId)
-                              setShowDeleteTask(true)
-                            }}
-                          />
-                        ))}
-                        {stageTasks.length === 0 && (
-                          <p className="text-sm text-gray-500 italic">Нет задач в этом этапе</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedStageId(stage.id)
-                          setShowCreateTask(true)
-                        }}
-                        className="mt-3 flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Добавить задачу
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Tasks without stage - only show if no stages exist or if there are standalone tasks */}
-      {(goalStages.length === 0 || standaloneTasks.length > 0) && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {goalStages.length > 0 ? 'Задачи без этапа' : 'Задачи'}
-            </h2>
-            <button
-              onClick={() => {
-                setSelectedStageId(undefined)
-                setShowCreateTask(true)
-              }}
-              className="btn-secondary text-sm"
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Добавить
-            </button>
-          </div>
-          <div className="space-y-2">
-            {standaloneTasks.map((task) => (
-              <TaskItem 
-                key={task.id} 
-                task={task} 
-                onToggle={async () => {
-                  try {
-                    await updateTask(task.id, { completed: !task.completed })
-                } catch (error) {
-                  // Removed console.error
-                }
-              }}
-              onEdit={(task) => {
-                setSelectedTask(task)
-                setShowEditTask(true)
-              }}
-              onDelete={(taskId) => {
-                setTaskToDelete(taskId)
-                setShowDeleteTask(true)
-              }}
-            />
-          ))}
-          {standaloneTasks.length === 0 && (
-            <p className="text-gray-500 text-center py-4">Нет задач</p>
-          )}
-        </div>
-      </div>
-      )}
-
-      {/* Metrics */}
-      {goalMetrics.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Метрики</h2>
-            <button
-              onClick={() => setShowCreateMetric(true)}
-              className="btn-secondary text-sm"
-            >
-              Добавить
-            </button>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {goalMetrics.map((metric) => {
-              const entries = metricEntries.filter(e => e.metricId === metric.id)
-              const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
-              const isHabitWithPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.autoResetEnabled && metric.resetPeriodicity
-              const periodValue = isHabitWithPeriodicity
-                ? getEntriesForCurrentPeriod(entries, metric.resetPeriodicity, metric.resetCustomDays, metric.resetWeekdays)
-                    .reduce((sum, e) => sum + (e.value || 0), 0)
-                : totalValue
-              const progress = metric.targetValue > 0 ? Math.min(100, Math.round((periodValue / metric.targetValue) * 100)) : 0
-              return (
-                <button
-                  key={metric.id}
-                  onClick={() => {
-                    setSelectedMetric(metric)
-                    setShowMetricAnalytics(true)
-                  }}
-                  className="p-4 bg-white rounded-xl border border-gray-200 text-left transition-colors hover:shadow-md hover:border-gray-300"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: metric.color }}
-                    />
-                    <span className="font-medium text-gray-900">{metric.name}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-gray-900">
-                      {periodValue} / {metric.targetValue}
-                    </span>
-                    <span className="text-sm font-medium text-gray-600">{progress}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="h-2 rounded-full transition-all duration-300"
-                      style={{
-                        width: `${Math.min(Math.max(progress, 0), 100)}%`,
-                        backgroundColor: metric.color || '#3b82f6'
+                  <div className="relative h-2 bg-gradient-to-r from-blue-200 via-gray-200 to-green-200 rounded-full">
+                    <div 
+                      className="absolute top-0 h-full w-1 bg-red-500 rounded-full shadow-sm"
+                      style={{ 
+                        left: `${Math.min(100, Math.max(0, ((Date.now() - validGanttData.minStart) / (validGanttData.maxEnd - validGanttData.minStart)) * 100))}%`,
+                        transform: 'translateX(-50%)'
                       }}
                     />
                   </div>
+                </div>
+                <div className="space-y-3">
+                  {validGanttData.data.map((item) => (
+                    <TimelineItem
+                      key={item.id}
+                      item={item}
+                      categoryColor={item.type === 'goal' ? categories.find(c => c.id === (item as any).categoryId)?.color : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stages */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-semibold text-gray-900">Этапы</h3>
+                <button
+                  onClick={() => setShowCreateStage(true)}
+                  className="btn-secondary text-sm"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Добавить этап
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+              </div>
+              {goalStages.length > 0 ? (
+                <div className="space-y-3">
+                  {goalStages.map((stage) => {
+                    const isExpanded = expandedStages.has(stage.id)
+                    const stageTasks = allTasks.filter(t => t.stageId === stage.id)
+                    return (
+                      <div
+                        key={stage.id}
+                        className="border border-gray-200 rounded-xl overflow-hidden"
+                      >
+                        {/* Stage Header */}
+                        <div
+                          className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                          onClick={() => {
+                            const newSet = new Set(expandedStages)
+                            if (isExpanded) {
+                              newSet.delete(stage.id)
+                            } else {
+                              newSet.add(stage.id)
+                            }
+                            setExpandedStages(newSet)
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            )}
+                            <div>
+                              <h3 className="font-medium text-gray-900">{stage.name}</h3>
+                              {stage.description && (
+                                <p className="text-sm text-gray-500">{stage.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedStage(stage)
+                                setShowEditStage(true)
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedStage(stage)
+                                setShowDeleteStage(true)
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
 
-      {/* Professional Gantt Chart */}
-      {validGanttData && validGanttData.data.length > 0 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Временная шкала проекта</h2>
+                        {/* Stage Content */}
+                        {isExpanded && (
+                          <div className="p-3 pt-0 border-t border-gray-100">
+                            <div className="mt-3 space-y-2">
+                              {stageTasks.map((task) => (
+                                <TaskItem 
+                                  key={task.id} 
+                                  task={task} 
+                                  onToggle={async () => {
+                                    try {
+                                      await updateTask(task.id, { completed: !task.completed })
+                                    } catch (error) {
+                                      // Removed console.error
+                                    }
+                                  }}
+                                  onEdit={(task) => {
+                                    setSelectedTask(task)
+                                    setShowEditTask(true)
+                                  }}
+                                  onDelete={(taskId) => {
+                                    setTaskToDelete(taskId)
+                                    setShowDeleteTask(true)
+                                  }}
+                                />
+                              ))}
+                              {stageTasks.length === 0 && (
+                                <p className="text-sm text-gray-500 italic">Нет задач в этом этапе</p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedStageId(stage.id)
+                                setShowCreateTask(true)
+                              }}
+                              className="mt-3 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Добавить задачу
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                  <Calendar className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm mb-3">Нет этапов. Разбей цель на этапы для лучшего отслеживания прогресса.</p>
+                  <button
+                    onClick={() => setShowCreateStage(true)}
+                    className="btn-primary text-sm"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Создать первый этап
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Clock className="w-4 h-4" />
-              <span>{formatDate(new Date())}</span>
-            </div>
-          </div>
 
-          {/* Timeline Header */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-              <span>Начало проекта</span> 
-              <span>Завершение</span>
+            {/* Tasks without stage */}
+            {(goalStages.length === 0 || standaloneTasks.length > 0) && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base font-semibold text-gray-900">
+                    {goalStages.length > 0 ? 'Задачи без этапа' : 'Задачи'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setSelectedStageId(undefined)
+                      setShowCreateTask(true)
+                    }}
+                    className="btn-secondary text-sm"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Добавить
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {standaloneTasks.map((task) => (
+                    <TaskItem 
+                      key={task.id} 
+                      task={task} 
+                      onToggle={async () => {
+                        try {
+                          await updateTask(task.id, { completed: !task.completed })
+                      } catch (error) {
+                        // Removed console.error
+                      }
+                    }}
+                    onEdit={(task) => {
+                      setSelectedTask(task)
+                      setShowEditTask(true)
+                    }}
+                    onDelete={(taskId) => {
+                      setTaskToDelete(taskId)
+                      setShowDeleteTask(true)
+                    }}
+                  />
+                ))}
+                {standaloneTasks.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">Нет задач</p>
+                )}
+              </div>
             </div>
-            <div className="relative h-2 bg-gradient-to-r from-blue-200 via-gray-200 to-green-200 rounded-full">
-              <div 
-                className="absolute top-0 h-full w-1 bg-red-500 rounded-full shadow-sm"
-                style={{ 
-                  left: `${Math.min(100, Math.max(0, ((Date.now() - validGanttData.minStart) / (validGanttData.maxEnd - validGanttData.minStart)) * 100))}%`,
-                  transform: 'translateX(-50%)'
-                }}
-              />
-            </div>
-          </div>
+            )}
 
-          {/* Timeline Items */}
-          <div className="space-y-3">
-            {validGanttData.data.map((item) => (
-              <TimelineItem
-                key={item.id}
-                item={item}
-                categoryColor={item.type === 'goal' ? categories.find(c => c.id === (item as any).categoryId)?.color : undefined}
-              />
-            ))}
+            {/* Metrics */}
+            {goalMetrics.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base font-semibold text-gray-900">Метрики</h3>
+                  <button
+                    onClick={() => setShowCreateMetric(true)}
+                    className="btn-secondary text-sm"
+                  >
+                    Добавить
+                  </button>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {goalMetrics.map((metric) => {
+                    const entries = metricEntries.filter(e => e.metricId === metric.id)
+                    const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0)
+                    const isHabitWithPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit' || metric.type === 'counter') && metric.autoResetEnabled && metric.resetPeriodicity
+                    const periodValue = isHabitWithPeriodicity
+                      ? getEntriesForCurrentPeriod(entries, metric.resetPeriodicity, metric.resetCustomDays, metric.resetWeekdays)
+                          .reduce((sum, e) => sum + (e.value || 0), 0)
+                      : totalValue
+                    const progress = metric.targetValue > 0 ? Math.min(100, Math.round((periodValue / metric.targetValue) * 100)) : 0
+                    return (
+                      <button
+                        key={metric.id}
+                        onClick={() => {
+                          setSelectedMetric(metric)
+                          setShowMetricAnalytics(true)
+                        }}
+                        className="p-4 bg-white rounded-xl border border-gray-200 text-left transition-colors hover:shadow-md hover:border-gray-300"
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: metric.color }}
+                          />
+                          <span className="font-medium text-gray-900">{metric.name}</span>
+                        </div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-bold text-gray-900">
+                            {periodValue} / {metric.targetValue}
+                          </span>
+                          <span className="text-sm font-medium text-gray-600">{progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="h-2 rounded-full transition-all duration-300"
+                            style={{
+                              width: `${Math.min(Math.max(progress, 0), 100)}%`,
+                              backgroundColor: metric.color || '#3b82f6'
+                            }}
+                          />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-  
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Edit Goal Modal */}
       <Modal

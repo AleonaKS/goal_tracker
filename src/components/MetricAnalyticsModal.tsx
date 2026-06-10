@@ -101,7 +101,7 @@ export function MetricAnalyticsModal({ isOpen, onClose, metric, onEdit, onDelete
       : entries.filter(e => !e.id.startsWith('temp-')).reduce((sum, e) => sum + e.value, 0)
 
     // Для привычек с периодичностью рассчитывать значение за текущий период
-    const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
+    const hasPeriodicity = (metric.type === 'habit' || metric.type === 'simple_habit' || metric.type === 'counter') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none'
     let periodValue = totalValue
 
     if (hasPeriodicity) {

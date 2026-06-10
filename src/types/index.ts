@@ -82,6 +82,7 @@ export interface Stage {
   userId: string
   goalId: string
   name: string
+  description?: string
   startDate?: Date
   dueDate?: Date  // Kept for compatibility, maps to endDate
   endDate?: Date
