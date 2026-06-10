@@ -304,7 +304,7 @@ export function calculateMetricProgress(
   let isPeriodBased = false
   if (metric.type === 'simple_habit') {
     isPeriodBased = true
-  } else if (metric.type === 'habit' && metric.resetPeriodicity && metric.resetPeriodicity !== 'none') {
+  } else if ((metric.type === 'habit' || metric.type === 'counter') && metric.resetPeriodicity && metric.resetPeriodicity !== 'none') {
     isPeriodBased = true
   }
 

@@ -747,7 +747,7 @@ export async function createMetric(metric: MetricCreateInput): Promise<Metric> {
     .insert([dbMetric])
     .select(`
       *,
-      goal:goals(*)
+      goal:goals!metrics_goal_id_fkey(*)
     `)
     .single()
 
@@ -792,7 +792,7 @@ export async function updateMetric(id: string, updates: Partial<Metric>): Promis
     .eq('id', id)
     .select(`
       *,
-      goal:goals(*)
+      goal:goals!metrics_goal_id_fkey(*)
     `)
     .single()
 
