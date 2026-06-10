@@ -151,17 +151,17 @@ export async function getGoals(userId: string): Promise<Goal[]> {
       *,
       category:categories(*),
       stages:stages(*),
-      metrics:metrics(*),
+      metrics:metrics!metrics_goal_id_fkey(*),
       tasks:tasks(*)
     `)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-  
+
   if (error) {
     console.error('getGoals error:', error)
     throw error
   }
-  
+
   console.log('getGoals returned', data?.length || 0, 'goals')
   return data || []
 }
@@ -173,7 +173,7 @@ export async function getGoalById(id: string): Promise<Goal | null> {
       *,
       category:categories(*),
       stages:stages(*),
-      metrics:metrics(*),
+      metrics:metrics!metrics_goal_id_fkey(*),
       tasks:tasks(*)
     `)
     .eq('id', id)
